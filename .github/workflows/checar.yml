@@ -1,0 +1,28 @@
+# © 2026 GK Soluções Empresariais LTDA (CNPJ 60.180.675/0001-91) · Todos os direitos reservados. Veja LICENSE e AUTORIA.md.
+# Checagem de cada PR: os testes do build e a montagem (completa quando a instância está pronta; senão, prévia).
+name: Checar
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  checar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      TZ: America/Sao_Paulo
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: npm ci --no-audit --no-fund
+      - name: Testes do build
+        run: npm test
+      - name: Montar
+        run: |
+          if node ops/instancia/instancia.mjs compra-store > /dev/null 2>&1; then node ops/instancia/montar.mjs compra-store
+          else node ops/instancia/montar.mjs compra-store --rascunho; fi

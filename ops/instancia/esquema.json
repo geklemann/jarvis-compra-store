@@ -1,0 +1,33 @@
+{
+  "$comment": "Esquema da configuração de uma instância do Jarvis E-Commerce (instancias/<id>.json). Sem segredo: só o que é público (endereço, chave anon, chave pública dos alertas) e o que a GK precisa para montar e publicar. Validado por ops/instancia/instancia.mjs; os campos de x-obrigatorios-para-publicar podem ficar null só com --rascunho.",
+  "$id": "https://jaarvis.com.br/esquemas/instancia.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "nome", "dominio", "project_ref", "supabase_url", "anon_key", "vapid_publico", "suporte", "workspace_id", "funcoes", "demo"],
+  "x-obrigatorios-para-publicar": ["dominio", "project_ref", "supabase_url", "anon_key", "vapid_publico", "suporte.email"],
+  "properties": {
+    "$schema": { "type": "string" },
+    "id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]{1,40}$", "description": "Identificador (nome do arquivo, do Environment do GitHub e da pasta _inst/<id>)." },
+    "nome": { "type": "string", "minLength": 2, "description": "Nome da empresa, como aparece nas telas." },
+    "dominio": { "type": ["string", "null"], "pattern": "^(?=.{4,253}$)([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\\.)+[a-z]{2,}$", "description": "Domínio onde o app fica (sem https://, sem barra). O app abre em https://<dominio>/app/." },
+    "project_ref": { "type": ["string", "null"], "pattern": "^[a-z]{20}$", "description": "Ref do projeto Supabase da empresa (20 letras)." },
+    "supabase_url": { "type": ["string", "null"], "pattern": "^https://[a-z]{20}\\.supabase\\.co$", "description": "https://<project_ref>.supabase.co" },
+    "anon_key": { "type": ["string", "null"], "pattern": "^(eyJ[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+|sb_publishable_[A-Za-z0-9_-]{20,})$", "description": "Chave pública (anon ou publishable) do projeto. É pública por natureza: a proteção vem do login e do RLS." },
+    "vapid_publico": { "type": ["string", "null"], "pattern": "^[A-Za-z0-9_-]{80,100}$", "description": "Chave pública VAPID dos alertas no celular (a privada fica só nos segredos das funções)." },
+    "suporte": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["email", "whatsapp"],
+      "properties": {
+        "email": { "type": ["string", "null"], "pattern": "^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$" },
+        "whatsapp": { "type": ["string", "null"], "pattern": "^\\+?[0-9 ()-]{10,20}$" }
+      }
+    },
+    "workspace_id": { "type": "string", "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", "description": "A empresa (workspace) que vai para a instância." },
+    "funcoes": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "type": "string", "pattern": "^[a-z][a-z0-9-]+$" }, "description": "Edge Functions publicadas no projeto da empresa (pastas de supabase/functions)." },
+    "demo": { "type": "boolean", "description": "Leva a demonstração (Loja Modelo) no build." },
+    "repositorio": { "type": ["string", "null"], "pattern": "^[A-Za-z0-9-]+/[A-Za-z0-9._-]+$", "description": "Repositório privado das telas da empresa (owner/nome)." },
+    "cloudflare_pages": { "type": ["string", "null"], "pattern": "^[a-z0-9][a-z0-9-]{0,57}$", "description": "Nome do projeto no Cloudflare Pages da empresa." },
+    "privacidade_url": { "type": ["string", "null"], "pattern": "^https://", "description": "Política de privacidade mostrada na Central do Cliente (sem ela, a do Jarvis)." }
+  }
+}

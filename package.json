@@ -1,0 +1,20 @@
+{
+  "name": "jarvis-compra-store",
+  "version": "3.0.0",
+  "private": true,
+  "author": "GK Soluções Empresariais LTDA",
+  "license": "SEE LICENSE IN LICENSE",
+  "description": "Jarvis E-Commerce · telas da Compra Store (instância própria). Fonte da verdade: geklemann/jarvis.",
+  "scripts": {
+    "montar": "node ops/instancia/montar.mjs compra-store",
+    "previa": "node ops/instancia/montar.mjs compra-store --rascunho",
+    "test": "node --test --test-timeout=180000 \"testes/*.test.mjs\""
+  },
+  "engines": {
+    "node": ">=24"
+  },
+  "devDependencies": {
+    "esbuild": "^0.28.2",
+    "javascript-obfuscator": "^4.1.1"
+  }
+}

@@ -1,0 +1,48 @@
+# © 2026 GK Soluções Empresariais LTDA (CNPJ 60.180.675/0001-91) · Todos os direitos reservados. Veja LICENSE e AUTORIA.md.
+# Publica as telas do Jarvis E-Commerce da Compra Store no Cloudflare Pages da empresa. Só a main publica (o TI da
+# empresa junta direto; a checagem roda os testes antes). Segredos do repositório (Settings › Secrets and variables › Actions), criados pelo TI:
+#   CLOUDFLARE_API_TOKEN  — token com só a permissão "Cloudflare Pages: Edit" na conta da empresa;
+#   CLOUDFLARE_ACCOUNT_ID — o id da conta Cloudflare da empresa.
+# O projeto do Pages é o "cloudflare_pages" do instancia.json. Sem os segredos ou sem o projeto, monta, testa e avisa.
+name: Publicar
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publicar
+  cancel-in-progress: false
+
+jobs:
+  publicar:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      TZ: America/Sao_Paulo
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: npm ci --no-audit --no-fund
+      - name: Testes do build
+        run: npm test
+      - name: Montar (recusa instância incompleta e qualquer resto da base da GK)
+        run: JARVIS_VERSAO=$(date +%Y%m%d%H%M%S) node ops/instancia/montar.mjs compra-store
+      - name: Publicar no Cloudflare Pages
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          projeto=$(node -p "require('./instancia.json').cloudflare_pages || ''")
+          if [ -z "$CLOUDFLARE_API_TOKEN" ] || [ -z "$CLOUDFLARE_ACCOUNT_ID" ] || [ -z "$projeto" ]; then
+            echo "::warning::Nada publicado: faltam os segredos CLOUDFLARE_API_TOKEN e CLOUDFLARE_ACCOUNT_ID ou o cloudflare_pages do instancia.json (veja o README)."
+            exit 0
+          fi
+          npx --yes wrangler@4 pages deploy _inst/compra-store --project-name "$projeto" --branch main --commit-hash "$GITHUB_SHA" --commit-dirty=true
