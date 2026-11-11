@@ -1,0 +1,235 @@
+// © 2026 GK Soluções Empresariais LTDA (CNPJ 60.180.675/0001-91) · Todos os direitos reservados. Veja LICENSE e AUTORIA.md.
+'use strict';
+// Radar de margem: lucro de CADA pedido (venda − tarifa − frete do vendedor − custo das mercadorias − tributos
+// sobre a venda) e onde a empresa perde dinheiro: pedidos, produtos e canais com margem negativa, e tarifas
+// cobradas fora do padrão do canal (possível erro do marketplace a contestar).
+(()=>{
+Object.assign(paths,{radar:'M12 21a9 9 0 1 1 0-18 9 9 0 0 1 0 18z M12 16a4 4 0 1 1 0-8 4 4 0 0 1 0 8z M12 12l6-6'});
+const ui={periodo:30,canal:'',aba:'anuncios',meta:10,busca:'',ord:{}};
+window.Reiniciar?.registrar(ui,['periodo','canal','aba','busca','ord']); // estado de tela: volta ao original ao clicar no menu
+const menos=n=>{const d=new Date();d.setDate(d.getDate()-n);return d.toLocaleDateString('sv-SE')};
+const p1=v=>(v*100).toFixed(1).replace('.',',')+'%';
+let cache=null;
+function aliqTributos(){try{const ms=[...new Set(db.orders.map(o=>o.date.slice(0,7)))].sort().reverse();for(const m of ms){const d=window.Gestao?.dreMes?.(m);if(d?.fonte==='balancete'&&d.v?.receita>0)return {r:-(d.v.impostos||0)/d.v.receita,m}}}catch{}return {r:0.24,m:null}}
+// Custo por SKU: cadastro de produtos (custo + embalagem), com o custo do estoque (Bling) por cima quando existir.
+// Custo oficial = tabela de preços (Formação de preço, a planilha importada). O custo do Bling só entra para produto
+// que ainda não está na tabela.
+function mapaCusto(){const custo=new Map((db.products||[]).filter(p=>Number(p.custo)>0).map(p=>[String(p.id).trim(),{c:Number(p.custo),e:Number(p.embalagem)||0,f:'tabela'}]));for(const p of window.Estoque?.lista?.()||[]){const k=String(p.id).trim();if(Number(p.custo)&&!custo.has(k))custo.set(k,{c:Number(p.custo),e:0,f:'bling'})}return custo}
+// Tarifa só da API do marketplace: pedido com tarifa estimada pelo Bling (ou sem origem) fica fora da margem.
+const tarifaReal=o=>{const f=o.feeSource||o.fee_source||'';return f===o.platform};
+// Lucro de contribuição de um pedido. null = cancelado/reembolsado (tarifa ≥ 95% da venda: o marketplace não repassa
+// nada, fica fora da margem); {falta:true} = algum item sem custo cadastrado.
+// null = cancelado/reembolsado (tarifa ≥ 95% do bruto, bruto zerado ou abaixo de metade do valor dos itens);
+// {semTarifa:true} = tarifa ainda não veio da API do marketplace (estimativa do Bling) — fica fora, contado à parte.
+function cancelado(o){const it=(o.items||[]).reduce((s,i)=>s+(Number(i.qty)||0)*(Number(i.price)||0),0);return !(o.gross>0)||o.fee>=o.gross*0.95||(it>0&&o.gross<it*0.5)}
+function lucroPedido(o,custo,aliq){if(cancelado(o))return null;if(!tarifaReal(o))return {semTarifa:true};let cmv=0;for(const it of o.items||[]){const c=custo.get(String(it.sku||'').trim());if(!c)return {falta:true};cmv+=(c.c+c.e)*(Number(it.qty)||0)}
+ const frete=0,trib=o.gross*aliq;/* com tarifa da API o frete do vendedor já está na tarifa (ML: sale_fee + frete) */return {cmv,frete,trib,lucro:o.gross-o.fee-frete-cmv-trib}}
+function calcular(){const k=[db.orders.length,ui.periodo,(window.Estoque?.lista?.()||[]).length].join('|');if(cache?.k===k)return cache.v;
+ taxaML=null;const ini=menos(ui.periodo),custo=mapaCusto();
+ const {r:aliq,m:mesAliq}=aliqTributos(),peds=[],cancelados=[],semTarifa=[];let semCusto=0;
+ for(const o of db.orders){if(o.date<ini)continue;const x=lucroPedido(o,custo,aliq);
+  if(!x){cancelados.push(o);continue}if(x.semTarifa){semTarifa.push(o);continue}if(x.falta){semCusto++;continue}
+  peds.push({o,...x,m:o.gross?x.lucro/o.gross:0,feeP:o.gross?o.fee/o.gross:0})}
+ // Tarifa fora do padrão: acima de 1,5× a mediana do canal para o mesmo produto principal.
+ const med=new Map();for(const x of peds){const k=x.o.platform+'|'+(x.o.items?.[0]?.sku||'');(med.get(k)||med.set(k,[]).get(k)).push(x.feeP)}
+ for(const [k,l] of med){l.sort((a,b)=>a-b);med.set(k,l[Math.floor(l.length/2)])}
+ for(const x of peds){const md=med.get(x.o.platform+'|'+(x.o.items?.[0]?.sku||''));x.tarifaFora=md>0&&x.feeP>md*1.5&&x.o.fee-x.o.gross*md>5;x.tarifaExcesso=md?x.o.fee-x.o.gross*md:0}
+ const custoDe=sku=>{const c=custo.get(String(sku||'').trim());return c?c.c+c.e:0};const custoInfo=sku=>custo.get(String(sku||'').trim())||null;cache={k,v:{peds,aliq,mesAliq,semCusto,cancelados,semTarifa,custoDe,custoInfo}};return cache.v}
+// Do lucro de contribuição ao líquido: marketing e demais comerciais (DRE − tarifas dos pedidos), despesas fixas,
+// resultado financeiro e IR/CSLL de cada mês da DRE gerencial, na proporção dos dias do período. Mês sem balancete usa
+// o último mês fechado pela contabilidade (despesas fixas costumam se repetir) e fica marcado como estimado.
+function custosDoPeriodo(ini,fim){const G=window.Gestao,out={fixas:0,mkt:0,fin:0,ir:0,meses:[],estimado:false};if(!G?.dreMes)return out;
+ const fechados=[...new Set((db.accLines||[]).map(l=>l.month))].sort().reverse(),d0=new Date(ini+'T12:00:00'),d1=new Date(fim+'T12:00:00');
+ for(let a=new Date(d0.getFullYear(),d0.getMonth(),1,12);a<=d1;a=new Date(a.getFullYear(),a.getMonth()+1,1,12)){
+  const m=a.toLocaleDateString('sv-SE').slice(0,7),dm=new Date(a.getFullYear(),a.getMonth()+1,0).getDate(),i=new Date(Math.max(d0,a)),f=new Date(Math.min(d1,new Date(a.getFullYear(),a.getMonth(),dm,12))),dias=Math.round((f-i)/864e5)+1;if(dias<=0)continue;
+  let d=G.dreMes(m,'gerencial'),ref=m;if(!d?.fonte){const x=fechados.find(x=>x<m);if(!x)continue;d=G.dreMes(x,'gerencial');ref=x;out.estimado=true}
+  const v=d?.v||{},p=dias/dm,tar=db.orders.filter(o=>o.date.startsWith(ref)&&!cancelado(o)).reduce((x,o)=>x+(Number(o.fee)||0),0);
+  out.fixas+=-((v.trabalhistas||0)+(v.administrativas||0)+(v.outras||0)+(v.depreciacao||0))*p;out.mkt+=Math.max(0,-(v.comerciais||0)-tar)*p;
+  out.fin+=((v.rec_fin||0)+(v.desp_fin||0))*p;out.ir+=-(v.ir||0)*p;out.meses.push(ref)}
+ return out}
+// Rateia os custos do período pelo peso de cada grupo nas vendas de TODOS os pedidos do período (inclui os sem custo).
+function liquido(g,C,base){const w=base?g.venda/base:0;g.mkt=C.mkt*w;g.fixas=C.fixas*w;g.fin=C.fin*w;g.ir=C.ir*w;g.ll=g.lucro-g.mkt-g.fixas+g.fin-g.ir;g.ml=g.venda?g.ll/g.venda:0;return g}
+// Por anúncio (canal + produto): preço praticado, custo e o que a plataforma fica, separado em
+// TARIFA DO E-COMMERCE (comissão % + taxa fixa por item − rebate) e FRETE E OUTROS (frete cobrado, descontos
+// bancados pela loja, diferenças de repasse). Preço mínimo para a meta = (custo + taxa fixa + frete) ÷
+// (1 − % variável − tributos − meta).
+const nn=v=>Number(v)||0;
+const faixaShopee=p=>{for(const [ate,v] of db.pricing?.faixasShopee||[[79.99,4],[99.99,16],[199.99,20],[1e9,26]])if(p<=ate)return nn(v);return 0};
+// Comissão do ML por SKU: tarifas − frete, nos pedidos em que o Bling traz o frete separado (Clássico ≈ 11,5%, Premium ≈ 16,5%).
+let taxaML=null;
+function comissaoML(){if(taxaML)return taxaML;const m=new Map(),all=[],med=l=>{l.sort((a,b)=>a-b);return l[Math.floor(l.length/2)]};
+ for(const o of db.orders){if(o.platform!=='Mercado Livre')continue;const tp=nn(o.external?.tarifas_plataforma),sh=nn(o.shipping),its=o.items||[];if(!tp||!sh||sh>=tp||its.length!==1)continue;
+  const v=nn(its[0].qty)*nn(its[0].price),r=v?(tp-sh)/v:0;if(r<0.05||r>0.3)continue;for(const k of [String(its[0].sku||'')+'|'+nn(its[0].price).toFixed(2),String(its[0].sku||'')])(m.get(k)||m.set(k,[]).get(k)).push(r);all.push(r)}
+ taxaML={sku:new Map([...m].map(([k,l])=>[k,med(l)])),geral:all.length?med(all):0.115};return taxaML}
+// Decompõe o custo de plataforma de UM pedido (venda dos produtos − repasse + frete do vendedor) em partes que somam o total.
+function partes(x){const o=x.o,e=o.external||{},its=o.items||[],tot=its.reduce((a,i)=>a+nn(i.qty)*nn(i.price),0)||nn(o.gross),T=tot-(nn(o.gross)-nn(o.fee))+x.frete;
+ const r={tot,T,com:0,fixa:0,reb:0,frete:x.frete,outros:0,real:false,dt:[],ot:[],rb:[]};const R=e.renda;
+ if(o.platform==='Shopee'&&R&&R.commission_fee!=null){const c=nn(R.commission_fee),s=nn(R.service_fee),nc=R.net_commission_fee!=null?nn(R.net_commission_fee):c,ns=R.net_service_fee!=null?nn(R.net_service_fee):s;
+  r.fixa=Math.min(s,its.reduce((a,i)=>a+faixaShopee(nn(i.price))*nn(i.qty),0));r.com=c+s-r.fixa;r.reb=Math.max(0,c-nc+s-ns);r.real=true;
+  r.dt=[['Comissão Shopee',c],['Taxa de serviço (parte %)',s-r.fixa]];if(r.reb)r.rb=[['Rebate da Shopee na comissão e na taxa',r.reb]];
+  r.outros=T-(r.com+r.fixa-r.reb)-r.frete;const pix=nn(R.pix_discount),cup=nn(R.seller_discount),pro=nn(R.shipping_seller_protection_fee_amount);
+  r.ot=[['Desconto Pix dado ao comprador',pix],['Cupom da loja',cup],['Proteção de envio',pro]].filter(y=>y[1]>0.004);const resto=r.outros-pix-cup-pro;if(Math.abs(resto)>=0.01)r.ot.push([resto<0?'Ajustes a seu favor':'Outros ajustes da Shopee',resto])}
+ // Sem o Bling (pedido só da API do ML) a tarifa do pedido já é a do ML (sale_fee + frete): separa o frete do mesmo jeito.
+ else if(o.platform==='Mercado Livre'&&(e.tarifas_plataforma!=null||((o.feeSource||o.fee_source)==='Mercado Livre'&&nn(o.shipping)>0))){const tp=nn(e.tarifas_plataforma??o.fee),sh=nn(o.shipping),t=comissaoML(),k=String(its[0]?.sku||'');
+  if(sh>0&&sh<tp){r.com=tp-sh;r.real=true}else r.com=Math.min(tp,tot*(t.sku.get(k+'|'+nn(its[0]?.price).toFixed(2))??t.sku.get(k)??t.geral));
+  r.dt=[['Comissão do ML (tarifa de venda)',r.com]];r.frete=x.frete+(tp-r.com);if(tp-r.com>0.004)r.ot.push(['Frete cobrado pelo ML (Mercado Envios)',tp-r.com]);
+  const dif=T-tp-x.frete;if(dif<-0.004){r.reb=-dif;r.rb=[['Repasse acima do previsto (rebate/campanha do ML)',-dif]]}else if(dif>0.004){r.outros=dif;r.menor=dif>0.5;r.ot.push(['Repasse menor que o previsto pelo ML (vale conferir o pedido)',dif])}}
+ else if(o.platform==='Shopee'){// sem o detalhe da API: regra da Shopee (comissão 12%/18% + serviço 5,5% sobre o valor pago + fixa por faixa)
+  const pago=nn(o.gross),desc=pago>0&&pago<tot?tot-pago:0,f=tot?(tot-desc)/tot:1;
+  const cS=its.reduce((a,i)=>a+nn(i.qty)*nn(i.price)*f*(nn(i.price)<=79.99?0.18:0.12),0);r.com=cS+its.reduce((a,i)=>a+nn(i.qty)*nn(i.price)*f*0.055,0);r.fixa=its.reduce((a,i)=>a+faixaShopee(nn(i.price))*nn(i.qty),0);
+  r.dt=[['Comissão Shopee',cS],['Taxa de serviço (parte %)',r.com-cS]];if(desc)r.ot.push(['Desconto ao comprador (cupom/campanha da loja)',desc]);const dif=T-x.frete-r.com-r.fixa-desc;r.outros=desc;
+  if(dif<-0.004){r.reb=-dif;r.rb=[['Cobrado a menos que a regra (rebate/campanha)',-dif]]}else if(dif>0.004){r.outros+=dif;r.ot.push(['Outros ajustes da Shopee',dif])}}
+ else{r.com=Math.max(0,Math.min(T-x.frete,nn(o.fee)));r.real=o.fee_source===o.platform||o.feeSource===o.platform;r.dt=[[`Tarifa ${o.platform}`,r.com]];r.outros=T-x.frete-r.com;if(Math.abs(r.outros)>=0.01)r.ot.push([r.outros<0?'Ajustes a seu favor':'Outras deduções do repasse',r.outros])}
+ if(x.frete>0.004)r.ot.unshift(['Frete pago pelo vendedor',x.frete]);return r}
+function anuncios(peds,aliq,custoDe){const m=new Map(),soma=(mp,l,f)=>{for(const [k,v] of l)mp.set(k,(mp.get(k)||0)+v*f)};
+ for(const x of peds){const its=x.o.items||[],p=partes(x),tot=p.tot||1;
+  for(const i of its){const q=nn(i.qty),vb=q*nn(i.price);if(!q||!vb)continue;const sh=vb/tot,k=x.o.platform+'|'+(i.sku||i.title),
+   g=m.get(k)||{canal:x.o.platform,sku:i.sku,nome:i.title||i.sku,u:0,venda:0,com:0,fixa:0,reb:0,frete:0,outros:0,cmv:0,n:0,nReal:0,dt:new Map(),ot:new Map(),rb:new Map()};
+   g.u+=q;g.venda+=vb;g.com+=p.com*sh;g.fixa+=p.fixa*sh;g.reb+=p.reb*sh;g.frete+=p.frete*sh;g.outros+=p.outros*sh;g.cmv+=(custoDe(i.sku)||0)*q;g.n++;if(p.real)g.nReal++;if(p.menor)(g.menores||(g.menores=[])).push(x.o.id);
+   soma(g.dt,p.dt,sh);soma(g.ot,p.ot,sh);soma(g.rb,p.rb,sh);m.set(k,g)}}
+ return [...m.values()].filter(g=>g.u>0&&g.cmv>0).map(g=>{const u=g.u,preco=g.venda/u,custo=g.cmv/u,tarU=(g.com+g.fixa-g.reb)/u,foU=(g.frete+g.outros)/u,
+   tp=g.venda?(g.com+g.fixa-g.reb)/g.venda:0,comP=g.venda?g.com/g.venda:0,fixaU=g.fixa/u,rebU=g.reb/u,
+   // Parte variável (acompanha o preço): comissão − rebate + descontos/ajustes; parte fixa por unidade: taxa fixa + frete.
+   varP=g.venda?(g.com-g.reb+g.outros)/g.venda:0,fixoU=(g.fixa+g.frete)/u,lucroU=preco-tarU-foU-custo-preco*aliq;
+  const den=1-varP-aliq,eq=den>0?(custo+fixoU)/den:null,min=den-ui.meta/100>0?(custo+fixoU)/(den-ui.meta/100):null;
+  return {...g,aliq,preco,custo,tarU,foU,tp,comP,fixaU,rebU,margem:preco?lucroU/preco:0,lucroU,eq,min,st:u<3?'poucos':eq&&preco<eq?'prejuizo':min&&preco<min?'abaixo':'ok'}}).sort((a,b)=>({prejuizo:0,abaixo:1,ok:2,poucos:3}[a.st]-{prejuizo:0,abaixo:1,ok:2,poucos:3}[b.st])||a.margem-b.margem)}
+// Detalhe (ao passar o mouse) de como cada valor foi calculado.
+const linhaTip=(t,v,cls='')=>`<div class="mgtl ${cls}"><span>${t}</span><b>${v}</b></div>`;
+function tipTarifa(a){const u=a.u,pp=v=>a.preco?` <em>${p1(v/u/a.preco)}</em>`:'';
+ return `<strong>Tarifa do e-commerce · ${esc(a.canal)}</strong><small>média por unidade em ${a.n} venda(s)</small>`+linhaTip('Preço praticado',money(a.preco))
+  +[...a.dt].map(([t,v])=>linhaTip(esc(t),money(v/u)+pp(v))).join('')+(a.fixaU>0.004?linhaTip('Taxa fixa por item (faixa de preço)',money(a.fixaU)):'')
+  +[...a.rb].map(([t,v])=>linhaTip('− '+esc(t),'− '+money(v/u)+pp(v),'green')).join('')
+  +linhaTip('= Tarifa real',`${money(a.tarU)} <em>${p1(a.tp)}</em>`,'tot')
+  +`<small>${a.nReal===a.n?'Valores reais da plataforma em todas as vendas.':a.nReal?`Valores reais em ${a.nReal} de ${a.n} vendas; o resto estimado pela taxa do anúncio.`:'Estimado pela taxa do canal (sem detalhe da plataforma).'}${a.canal==='Shopee'?' Shopee: comissão 12% (18% até R$ 79,99) + taxa de serviço 5,5% + taxa fixa por faixa de preço.':''}</small>`}
+function tipOutros(a){const u=a.u,l=[...a.ot].filter(([,v])=>Math.abs(v)>=0.005);
+ return `<strong>Frete e outros gastos</strong><small>média por unidade · não é tarifa do e-commerce</small>`+(l.map(([t,v])=>linhaTip(esc(t),money(v/u),v<0?'green':'')).join('')||linhaTip('Nenhum','R$ 0,00'))
+  +(a.menores?.length?`<small class="gold">Pedido(s) com repasse abaixo do previsto: ${a.menores.map(esc).join(', ')}. Confira no Mercado Pago; se não houver motivo (devolução, reclamação), vale contestar.</small>`:'')+linhaTip('= Total',`${money(a.foU)} <em>${p1(a.preco?a.foU/a.preco:0)}</em>`,'tot')+linhaTip('Repasse médio por unidade',money(a.preco-a.tarU-a.foU))}
+function tipMargem(a){const t=a.preco*(a.aliq||0),pc=v=>` <em>${p1(a.preco?v/a.preco:0)}</em>`;
+ return `<strong>Margem de contribuição</strong><small>por unidade · o que sobra de cada venda para pagar as despesas da empresa</small>`+linhaTip('Preço praticado',money(a.preco))+linhaTip('− Tarifa real do e-commerce','− '+money(a.tarU)+pc(a.tarU))+linhaTip('− Frete e outros','− '+money(a.foU)+pc(a.foU))+linhaTip('− Custo do produto','− '+money(a.custo)+pc(a.custo))+linhaTip(`− Tributos sobre a venda (${p1(a.aliq||0)})`,'− '+money(t)+pc(t))+linhaTip('= Margem de contribuição',`${money(a.lucroU)} <em>${p1(a.margem)}</em>`,'tot')+`<small>Tributos pela alíquota efetiva do último balancete. Depois dela ainda sai o rateio (marketing, fixas, financeiro e IR) até o lucro líquido.</small>`}
+function tipLiquido(a){return `<strong>Do preço ao líquido</strong><small>por unidade</small>`+linhaTip('Preço praticado',money(a.preco))+linhaTip('− Tarifa real do e-commerce','− '+money(a.tarU))+linhaTip('− Frete e outros','− '+money(a.foU))+linhaTip('− Custo do produto (custo + embalagem)','− '+money(a.custo))+linhaTip('− Tributos sobre a venda','− '+money(a.preco*(a.aliq||0)))+linhaTip('= Margem de contribuição',money(a.lucroU),'tot')+linhaTip('− Rateio (marketing, fixas, financeiro, IR)','− '+money(a.rat||0))+linhaTip('= Líquido',money(a.llU),'tot')}
+function tipCusto(a,ci){const c=ci?Number(ci.c)||0:a.custo,e=ci?Number(ci.e)||0:0;
+ return `<strong>Custo do produto</strong><small>por unidade · ${esc(a.sku||'')}</small>`+linhaTip(ci?.f==='bling'?'Custo de compra (Bling: produto sem custo no cadastro)':'Custo de compra (Custos e embalagens)',money(c))+linhaTip('+ Embalagem',money(e))+linhaTip('= Custo usado na margem',money(a.custo),'tot')+`<small>Para corrigir, ajuste o custo e a embalagem em Cadastros › Produtos › Custos e embalagens (o custo do Bling só vale para produto sem custo nesse cadastro). Tributos da venda e frete ficam fora do custo.</small>`}
+function tipRateio(a,C,base){const w=base?a.venda/base:0,u=a.u||1,l=[['Marketing e demais comerciais',C.mkt],['Despesas fixas (pessoal, administrativas, outras)',C.fixas],['Resultado financeiro',-C.fin],['IR e CSLL',C.ir]];
+ return `<strong>Rateio dos custos que não são do produto</strong><small>período de ${ui.periodo} dias · este anúncio = ${p1(w)} das vendas (${money(a.venda)} de ${money(base)})</small>`+l.map(([t,v])=>linhaTip(t,`${money(v*w/u)}/un. <em>${money(v)} no período</em>`,v<0?'green':'')).join('')+linhaTip('= Rateio por unidade',money((C.mkt+C.fixas-C.fin+C.ir)*w/u),'tot')+`<small>Valores da DRE gerencial${C.meses.length?` (${[...new Set(C.meses)].map(m=>m.slice(5)+'/'+m.slice(0,4)).join(', ')})`:''}, proporcionais aos dias do período${C.estimado?'; mês sem balancete estimado pelo último mês fechado':''}. Marketing já desconta as tarifas dos pedidos para não contar duas vezes.</small>`}
+function tipMinimo(a,aliq){return `<strong>Como chegamos ao preço</strong><small>custo e partes fixas ÷ (1 − partes que acompanham o preço)</small>`+linhaTip('Custo do produto',money(a.custo))+linhaTip('+ Taxa fixa e frete por unidade',money(a.fixaU+(a.frete/a.u)))+linhaTip('% variável (comissão − rebate + descontos)',p1(a.preco?(a.com-a.reb+a.outros)/a.venda:0))+linhaTip('+ Tributos',p1(aliq))+linhaTip('Equilíbrio (lucro zero)',a.eq?money(a.eq):'—','tot')+linhaTip(`Mínimo para ${ui.meta}% de margem`,a.min?money(a.min):'—','tot')}
+function agrupar(peds,chave){const m=new Map();for(const x of peds){const ks=chave(x);for(const [k,peso] of ks){const g=m.get(k)||{k,n:0,venda:0,lucro:0,neg:0};g.n+=peso;g.venda+=x.o.gross*peso;g.lucro+=x.lucro*peso;if(x.lucro<0)g.neg+=peso;m.set(k,g)}}return [...m.values()].map(g=>({...g,m:g.venda?g.lucro/g.venda:0}))}
+function view(){const {peds,aliq,mesAliq,semCusto,cancelados,semTarifa=[],custoDe,custoInfo}=calcular(),l=peds.filter(x=>!ui.canal||x.o.platform===ui.canal);
+ const venda=l.reduce((s,x)=>s+x.o.gross,0),lucro=l.reduce((s,x)=>s+x.lucro,0),neg=l.filter(x=>x.lucro<0),perda=neg.reduce((s,x)=>s+x.lucro,0),fora=l.filter(x=>x.tarifaFora),excesso=fora.reduce((s,x)=>s+x.tarifaExcesso,0);
+ const canais=[...new Set(peds.map(x=>x.o.platform))];
+ const prods=agrupar(l,x=>{const t=(x.o.items||[]).reduce((s,i)=>s+(Number(i.qty)||0)*(Number(i.price)||0),0)||1;return (x.o.items||[]).map(i=>[i.title||i.sku,(Number(i.qty)||0)*(Number(i.price)||0)/t])}).filter(g=>g.n>=1).sort((a,b)=>a.m-b.m);
+ const porCanal=agrupar(l,x=>[[x.o.platform,1]]).sort((a,b)=>b.venda-a.venda);
+ const ini=menos(ui.periodo),C=custosDoPeriodo(ini,new Date().toLocaleDateString('sv-SE')),base=db.orders.filter(o=>o.date>=ini&&!cancelado(o)).reduce((s,o)=>s+o.gross,0);
+ prods.forEach(g=>liquido(g,C,base));porCanal.forEach(g=>liquido(g,C,base));const T=liquido({k:'Total',n:l.length,venda,lucro,neg:neg.length,m:venda?lucro/venda:0},C,base);
+ const prodsV=[...prods].sort((a,b)=>b.venda-a.venda),prejLL=prods.filter(g=>g.ll<0).length;
+ const kpi=(t,v,s,tom)=>`<div class="card kpi"><span class="kpil">${t}</span><span class="kpiv ${tom||''}">${v}</span><span class="kpis">${s}</span></div>`;
+ return `<div class="notice">Lucro por pedido = venda − tarifa do marketplace − frete pago pelo vendedor − custo dos produtos (custo + embalagem) − tributos sobre a venda (${p1(aliq)}${mesAliq?`, alíquota efetiva do balancete de ${mesAliq.slice(5)}/${mesAliq.slice(0,4)}`:', estimada'}). O <strong>lucro líquido</strong> desconta ainda marketing e demais despesas comerciais, despesas fixas, resultado financeiro e IR/CSLL da DRE${C.meses.length?` (${[...new Set(C.meses)].map(m=>m.slice(5)+'/'+m.slice(0,4)).join(', ')}${C.estimado?', mês sem balancete estimado pelo último fechado':''})`:''}, proporcionais aos dias do período e rateados pelas vendas. ${cancelados.length?`${cancelados.filter(o=>!ui.canal||o.platform===ui.canal).length} pedido(s) cancelados/reembolsados (${money(cancelados.filter(o=>!ui.canal||o.platform===ui.canal).reduce((s,o)=>s+o.gross,0))}) ficaram fora da conta.`:''}${semTarifa.filter(o=>!ui.canal||o.platform===ui.canal).length?` ${semTarifa.filter(o=>!ui.canal||o.platform===ui.canal).length} pedido(s) ainda sem a tarifa real do marketplace (só a estimativa do Bling) ficaram fora até a tarifa chegar.`:''}${semCusto?` <span class="gold">${semCusto} pedido(s) fora da conta por falta de custo do produto.</span>`:''}</div>
+ <div class="grid kpis4">${kpi('Margem de contribuição',p1(venda?lucro/venda:0),`${money(lucro)} em ${money(venda)} vendidos`,lucro<0?'red':'green')}${kpi('Pedidos com prejuízo',neg.length.toLocaleString('pt-BR'),`${money(perda)} perdidos · ${p1(l.length?neg.length/l.length:0)} dos pedidos`,neg.length?'red':'')}${kpi('Tarifa fora do padrão',fora.length.toLocaleString('pt-BR'),`${money(excesso)} acima do normal · vale contestar`,fora.length?'gold':'')}${kpi('Lucro líquido',money(T.ll),`${p1(T.ml)} das vendas · ${prejLL} produto(s) no prejuízo${C.estimado?' · fixas estimadas':''}`,T.ll<0?'red':'green')}</div>
+ <div class="crmbar"><div class="segtabs">${[['anuncios','Por anúncio · preço mínimo'],['produtos','Por produto'],['canais','Por canal'],['pedidos','Pedidos com prejuízo'],['tarifas','Tarifas fora do padrão']].map(([k,t])=>`<button class="${ui.aba===k?'active':''}" data-mg-aba="${k}">${t}</button>`).join('')}</div>
+  <div class="segtabs">${[['','Todos'],...canais.map(c=>[c,c])].map(([k,t])=>`<button class="${ui.canal===k?'active':''}" data-mg-canal="${esc(k)}">${esc(t)}</button>`).join('')}</div><select data-mg-per aria-label="Período">${[7,30,60,90].map(n=>`<option value="${n}" ${ui.periodo===n?'selected':''}>Últimos ${n} dias</option>`).join('')}</select><div class="searchin">${icon('search')}<input type="search" data-mg-busca placeholder="Buscar produto, SKU, canal…" value="${esc(ui.busca)}"></div><label class="caption">Meta <input data-mg-meta type="number" value="${ui.meta}" style="width:60px">%</label></div>
+ ${ui.aba==='anuncios'?(()=>{const A=anuncios(l,aliq,custoDe),pj=A.filter(a=>a.st==='prejuizo'),ab=A.filter(a=>a.st==='abaixo');const ST={prejuizo:['bad','Prejuízo'],abaixo:['warn','Abaixo da meta'],ok:['ok','Saudável'],poucos:['','Poucas vendas']};
+  return `<div class="notice ${pj.length?'warnbox':''}"><strong>${pj.length} anúncio(s) vendendo com prejuízo</strong> e ${ab.length} abaixo da meta de ${ui.meta}%. A <strong>tarifa do e-commerce</strong> é só o que a plataforma cobra para vender (comissão % + taxa fixa por item), já com o <strong>rebate abatido</strong>. Frete, descontos bancados pela loja e diferenças de repasse ficam em <strong>Frete e outros</strong>. Passe o mouse sobre os valores para ver a conta. Clique no título de uma coluna para ordenar.</div>`+tabela(['Anúncio','Canal','Unid.','Preço praticado','Custo','Tarifa e-commerce','Frete e outros','Margem contrib.','Rateio/un.','Líquido/un.','Preço de equilíbrio',`Preço mínimo (${ui.meta}%)`,'Situação'],A.slice(0,400).map(a=>{const r=base?(C.mkt+C.fixas-C.fin+C.ir)*a.venda/base/a.u:0;a.rat=r;a.llU=a.lucroU-r;const tip=(h,v)=>`<span class="mgtip" data-tip="${esc(h)}">${v}</span>`;return [[`<div class="estprod">${window.Estoque?.foto?.(a.sku)||''}<span><strong>${esc(String(a.nome).slice(0,60))}</strong><br><span class="caption mono">${esc(a.sku||'')}</span></span></div>`,String(a.nome)],esc(a.canal),[Math.round(a.u).toLocaleString('pt-BR'),a.u],[money(a.preco),a.preco],[tip(tipCusto(a,custoInfo(a.sku)),money(a.custo)),a.custo],[tip(tipTarifa(a),`<strong>${p1(a.tp)}</strong> <span class="caption">${money(a.tarU)}/un.</span><br><span class="caption">${a.nReal?'':'≈ '}comissão ${p1(a.comP)}${a.fixaU>0.004?` + ${money(a.fixaU)}/un.`:''}${a.rebU>0.004?` <span class="green">− rebate ${money(a.rebU)}</span>`:''}</span>`),a.tp],[tip(tipOutros(a),`${money(a.foU)}<br><span class="caption">${p1(a.preco?a.foU/a.preco:0)} da venda</span>${a.menores?.length?`<br><span class="caption gold">⚠ ${a.menores.length} repasse(s) abaixo do previsto</span>`:''}`),a.foU],[tip(tipMargem(a),barra(a.margem)),a.margem],[tip(tipRateio(a,C,base),`− ${money(r)}`),-r],[tip(tipLiquido(a),`<strong class="${a.llU<0?'red':'green'}">${money(a.llU)}</strong><br><span class="caption ${a.llU<0?'red':''}">${p1(a.preco?a.llU/a.preco:0)} líquida</span>`),a.llU],[a.eq?tip(tipMinimo(a,aliq),money(a.eq)):'—',a.eq||0],[a.min?tip(tipMinimo(a,aliq),`<strong class="${a.preco<a.min?'red':''}">${money(a.min)}</strong>${a.preco<a.min?`<br><span class="caption">+${money(a.min-a.preco)}</span>`:''}`):'—',a.min||0],[`<span class="badge ${ST[a.st][0]}">${ST[a.st][1]}</span>`,{prejuizo:0,abaixo:1,ok:2,poucos:3}[a.st]]]}))})()
+ :ui.aba==='produtos'?tabela(['Produto',...['Pedidos','Vendido','Margem contrib.','% contrib.','Marketing e fixas','Financeiro e IR','Lucro líquido','% líquida']],[T,...prodsV.slice(0,400)].map(g=>[`<strong>${esc(g.k)}</strong>`,(g.n||0).toLocaleString('pt-BR',{maximumFractionDigits:0}),money(g.venda),`<span class="${g.lucro<0?'red':''}">${money(g.lucro)}</span>`,barra(g.m),money(-(g.mkt+g.fixas)),money(g.fin-g.ir),`<strong class="${g.ll<0?'red':'green'}">${money(g.ll)}</strong>`,`<span class="${g.ml<0?'red':''}">${p1(g.ml)}</span>`]))
+ :ui.aba==='canais'?tabela(['Canal',...['Pedidos','Vendido','Margem contrib.','% contrib.','Marketing e fixas','Financeiro e IR','Lucro líquido','% líquida']],[T,...porCanal].map(g=>[`<strong>${esc(g.k)}</strong>`,(g.n||0).toLocaleString('pt-BR',{maximumFractionDigits:0}),money(g.venda),`<span class="${g.lucro<0?'red':''}">${money(g.lucro)}</span>`,barra(g.m),money(-(g.mkt+g.fixas)),money(g.fin-g.ir),`<strong class="${g.ll<0?'red':'green'}">${money(g.ll)}</strong>`,`<span class="${g.ml<0?'red':''}">${p1(g.ml)}</span>`]))
+ :ui.aba==='pedidos'?tabela(['Pedido','Canal','Data','Venda','Tarifa','Frete','Custo','Tributos','Lucro'],neg.sort((a,b)=>a.lucro-b.lucro).slice(0,300).map(x=>[`<span class="mono clickrow" data-order="${esc(x.o.id)}">${esc(x.o.id)}</span><br><span class="caption">${esc((x.o.items||[]).map(i=>i.title||i.sku).join(' · ').slice(0,60))}</span>`,esc(x.o.platform),new Date(x.o.date+'T12:00:00').toLocaleDateString('pt-BR'),money(x.o.gross),money(x.o.fee),money(x.frete),money(x.cmv),money(x.trib),`<strong class="red">${money(x.lucro)}</strong>`]))
+ :tabela(['Pedido','Canal','Produto','Venda','Tarifa','% cobrado','Normal do canal','Excesso'],fora.sort((a,b)=>b.tarifaExcesso-a.tarifaExcesso).slice(0,300).map(x=>[`<span class="mono clickrow" data-order="${esc(x.o.id)}">${esc(x.o.id)}</span>`,esc(x.o.platform),esc((x.o.items?.[0]?.title||'').slice(0,50)),money(x.o.gross),money(x.o.fee),p1(x.feeP),p1(x.feeP-x.tarifaExcesso/x.o.gross),`<strong class="gold">${money(x.tarifaExcesso)}</strong>`]))}`}
+const barra=m=>`<span class="mgbar"><i class="${m<0?'neg':m*100<ui.meta?'low':''}" style="width:${Math.min(100,Math.abs(m)*250)}%"></i></span> <span class="${m<0?'red':''}">${p1(m)}</span>`;
+const cel=c=>Array.isArray(c)?c:[c,null];
+const tabela=(cab,linhas)=>`<div class="tablebox"><div class="tablewrap mgrola"><table class="mgtab"><thead><tr>${cab.map((c,i)=>`<th class="${i?'num':''} mgord" data-mg-ord="${i}" title="Ordenar por esta coluna">${c}<i class="mgseta"></i></th>`).join('')}</tr></thead><tbody>${linhas.map(l=>`<tr class="${/^<strong>Total<\/strong>$/.test(cel(l[0])[0])?'mgfixo':''}">${l.map((c,i)=>{const [h,v]=cel(c);return `<td class="${i?'num':''}"${v!=null?` data-v="${esc(typeof v==='number'?String(v):String(v))}"`:''}>${h}</td>`}).join('')}</tr>`).join('')||`<tr><td colspan="${cab.length}" class="empty">Nada aqui. ✓</td></tr>`}</tbody></table></div><div class="mgrodape caption" data-mg-cont></div></div>`;
+document.addEventListener('click',e=>{const b=e.target.closest('[data-mg-aba],[data-mg-canal]');if(!b)return;if(b.dataset.mgAba)ui.aba=b.dataset.mgAba;if(b.dataset.mgCanal!==undefined)ui.canal=b.dataset.mgCanal;render()});
+// Ordena e filtra as linhas já desenhadas (sem redesenhar a tela: o foco da busca não se perde).
+const normal=t=>String(t||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase();
+function valorCel(td){if(!td)return '';if(td.dataset.v!=null){const n=Number(td.dataset.v);return td.dataset.v!==''&&!isNaN(n)?n:normal(td.dataset.v)}const t=td.textContent.trim(),m=t.match(/([−-])?\s*(?:R\$\s*)?([\d.]+(?:,\d+)?)/);if(!m)return normal(t);return (m[1]?-1:1)*Number(m[2].replace(/\./g,'').replace(',','.'))}
+function aplicarTabela(){const tb=$('.mgtab tbody');if(!tb)return;const o=ui.ord[ui.aba],q=normal(ui.busca).trim(),rows=[...tb.rows].filter(r=>!r.querySelector('.empty'));
+ if(o){const fixos=rows.filter(r=>r.classList.contains('mgfixo')),resto=rows.filter(r=>!r.classList.contains('mgfixo'));resto.sort((a,b)=>{const x=valorCel(a.cells[o.i]),y=valorCel(b.cells[o.i]);const c=typeof x==='number'&&typeof y==='number'?x-y:String(x).localeCompare(String(y),'pt-BR',{numeric:true});return o.dir*c});for(const r of [...fixos,...resto])tb.appendChild(r)}
+ let n=0;for(const r of rows){const ok=!q||r.classList.contains('mgfixo')||q.split(/\s+/).every(p=>normal(r.textContent).includes(p));r.hidden=!ok;if(ok&&!r.classList.contains('mgfixo'))n++}
+ $$('.mgtab th[data-mg-ord]').forEach(th=>{th.classList.toggle('on',!!o&&Number(th.dataset.mgOrd)===o.i);th.dataset.dir=o&&Number(th.dataset.mgOrd)===o.i?(o.dir>0?'asc':'desc'):''});
+ const c=$('[data-mg-cont]');if(c)c.textContent=q?`${n} linha(s) encontradas para "${ui.busca}"`:`${n} linha(s)${o?' · ordenado por '+($(`.mgtab th[data-mg-ord="${o.i}"]`)?.textContent||''):''}`}
+document.addEventListener('click',e=>{const th=e.target.closest('.mgtab th[data-mg-ord]');if(!th)return;const i=Number(th.dataset.mgOrd),o=ui.ord[ui.aba];ui.ord[ui.aba]={i,dir:o&&o.i===i?-o.dir:(i===0||i===1?1:-1)};aplicarTabela()});
+let tipEl=null;
+document.addEventListener('mouseover',e=>{const t=e.target.closest?.('.mgtip[data-tip]');if(!t){if(tipEl&&!e.target.closest?.('.mgtip-pop'))tipEl.hidden=true;return}
+ if(!tipEl){tipEl=document.createElement('div');tipEl.className='mgtip-pop';document.body.appendChild(tipEl)}tipEl.innerHTML=t.dataset.tip;tipEl.hidden=false;const r=t.getBoundingClientRect(),w=tipEl.offsetWidth,h=tipEl.offsetHeight;
+ let x=Math.min(window.innerWidth-w-12,Math.max(12,r.right-w)),y=r.bottom+8;if(y+h>window.innerHeight-12)y=Math.max(12,r.top-h-8);tipEl.style.left=x+'px';tipEl.style.top=y+'px'});
+document.addEventListener('scroll',()=>{if(tipEl)tipEl.hidden=true},true);
+function bind(){const s=$('[data-mg-per]');if(s)s.onchange=()=>{ui.periodo=Number(s.value);cache=null;render()};const m=$('[data-mg-meta]');if(m)m.onchange=()=>{ui.meta=Number(m.value)||0;render()};const b=$('[data-mg-busca]');if(b)b.oninput=()=>{ui.busca=b.value;aplicarTabela()};if(tipEl)tipEl.hidden=true;aplicarTabela()}
+addPage('margem','radar','Radar de margem',view,'Lucro de cada pedido e onde a empresa perde dinheiro: produtos, canais, pedidos com prejuízo e tarifas fora do padrão.','',bind);
+// Desempenho de UM produto (para o orbe, a busca e a IA): vendas, lucro e margem por canal no período do Radar,
+// comparação com o período anterior, preço mínimo por canal e estoque.
+function produtoDesempenho(sku){const {peds,aliq,custoDe}=calcular(),per=ui.periodo,ini=menos(per),ini0=menos(per*2);sku=String(sku||'').trim();
+ const canais=new Map();let u=0,venda=0,lucro=0,ped=0;
+ for(const x of peds){const its=x.o.items||[],tot=its.reduce((a,i)=>a+(Number(i.qty)||0)*(Number(i.price)||0),0)||1;let tem=false;
+  for(const i of its){if(String(i.sku||'').trim()!==sku)continue;const q=Number(i.qty)||0,vb=q*(Number(i.price)||0),sh=vb/tot;tem=true;u+=q;venda+=vb;lucro+=x.lucro*sh;const g=canais.get(x.o.platform)||{canal:x.o.platform,u:0,venda:0,lucro:0};g.u+=q;g.venda+=vb;g.lucro+=x.lucro*sh;canais.set(x.o.platform,g)}if(tem)ped++}
+ // Comparação de volume: os dois períodos com a mesma regra (todos os pedidos não cancelados, com ou sem tarifa da API).
+ let u0=0,v0=0,uT=0,vT=0;for(const o of db.orders){if(o.date<ini0||cancelado(o))continue;const atual=o.date>=ini;for(const i of o.items||[])if(String(i.sku||'').trim()===sku){const q=Number(i.qty)||0,v=q*(Number(i.price)||0);if(atual){uT+=q;vT+=v}else{u0+=q;v0+=v}}}
+ const an=anuncios(peds,aliq,custoDe).filter(a=>String(a.sku||'').trim()===sku);
+ return {sku,periodo:per,unidades:uT,unidades_margem:u,venda,venda_total:vT,lucro,margem:venda?lucro/venda:0,pedidos:ped,unidades_ant:u0,venda_ant:v0,custo:custoDe(sku),meta:ui.meta,
+  canais:[...canais.values()].map(g=>({...g,margem:g.venda?g.lucro/g.venda:0,preco:g.u?g.venda/g.u:0,minimo:an.find(a=>a.canal===g.canal)?.min??null,equilibrio:an.find(a=>a.canal===g.canal)?.eq??null})).sort((a,b)=>b.venda-a.venda)}}
+function rankingProdutos(){const {peds}=calcular(),m=new Map();for(const x of peds){const its=x.o.items||[],tot=its.reduce((a,i)=>a+(Number(i.qty)||0)*(Number(i.price)||0),0)||1;for(const i of its){const k=String(i.sku||i.title).trim(),vb=(Number(i.qty)||0)*(Number(i.price)||0),g=m.get(k)||{sku:k,nome:i.title||k,u:0,venda:0,lucro:0};g.u+=Number(i.qty)||0;g.venda+=vb;g.lucro+=x.lucro*vb/tot;m.set(k,g)}}
+ return [...m.values()].map(g=>({...g,margem:g.venda?g.lucro/g.venda:0}))}
+// Resumo para o Diagnóstico de repasses e margem (mesmas contas do Radar, no período do Radar).
+function diagCore(){const {peds,aliq,custoDe,semCusto,cancelados}=calcular(),ini=menos(ui.periodo),C=custosDoPeriodo(ini,new Date().toLocaleDateString('sv-SE'));
+ const canais=new Map(),menores=[];let fora=0,excesso=0;
+ for(const x of peds){const p=partes(x),c=canais.get(x.o.platform)||{canal:x.o.platform,n:0,venda:0,prod:0,tar:0,fo:0,lucro:0};
+  c.n++;c.venda+=x.o.gross;c.prod+=p.tot;c.tar+=p.com+p.fixa-p.reb;c.fo+=p.frete+p.outros;c.lucro+=x.lucro;canais.set(x.o.platform,c);
+  if(x.tarifaFora){fora++;excesso+=x.tarifaExcesso}if(p.menor)menores.push({id:x.o.id,valor:p.outros,data:x.o.date})}
+ const venda=peds.reduce((s,x)=>s+x.o.gross,0),lucro=peds.reduce((s,x)=>s+x.lucro,0),base=db.orders.filter(o=>o.date>=ini&&!cancelado(o)).reduce((s,o)=>s+o.gross,0);
+ const fixos=base?(C.mkt+C.fixas-C.fin+C.ir)*venda/base:0;
+ const A=anuncios(peds,aliq,custoDe),pj=A.filter(a=>a.st==='prejuizo').map(a=>({nome:a.nome,sku:a.sku,canal:a.canal,u:a.u,preco:a.preco,min:a.min,eq:a.eq,perda:-a.lucroU*a.u,margem:a.margem})).filter(a=>a.perda>0).sort((a,b)=>b.perda-a.perda);
+ const abaixo=A.filter(a=>a.st==='abaixo').length;
+ return {periodo:ui.periodo,ini,pedidos:peds.length,venda,lucro,margem:venda?lucro/venda:0,liquido:lucro-fixos,aliq,semCusto,cancelados:cancelados.length,
+  canais:[...canais.values()].map(c=>({...c,tarP:c.prod?c.tar/c.prod:0,foP:c.prod?c.fo/c.prod:0,m:c.venda?c.lucro/c.venda:0})).sort((a,b)=>b.venda-a.venda),
+  fora:{n:fora,valor:excesso},menores:{n:menores.length,valor:menores.reduce((s,m)=>s+m.valor,0),lista:menores.sort((a,b)=>b.valor-a.valor).slice(0,5)},
+  prejuizo:{n:pj.length,valor:pj.reduce((s,a)=>s+a.perda,0),top:pj.slice(0,5)},abaixo,anuncios:A.length}}
+const diagnostico=per=>{const o=ui.periodo;if(per)ui.periodo=per;try{return diagCore()}finally{ui.periodo=o}};
+// Margem de contribuição de um mês (AAAA-MM), por canal ('' = empresa toda): só pedidos com custo de todos os itens.
+function porMes(mes){const custo=mapaCusto(),{r:aliq}=aliqTributos(),out={},S=c=>out[c]||(out[c]={venda:0,lucro:0,pedidos:0,semCusto:0});
+ for(const o of db.orders||[]){if(!String(o.date||'').startsWith(mes))continue;const x=lucroPedido(o,custo,aliq);if(!x||x.semTarifa)continue;
+  for(const c of ['',o.platform]){const s=S(c);if(x.falta){s.semCusto++;continue}s.venda+=Number(o.gross)||0;s.lucro+=x.lucro;s.pedidos++}}
+ return out}
+// ─── Raio-X: por que a margem mudou de um mês (A) para outro (B) ───
+// Margem = 1 − tarifa% − frete% − custo% − tributos% (sobre as vendas dos pedidos com custo). A variação se divide
+// exatamente entre esses fatores; por canal e por produto, a contribuição de cada um = lucroB/vendasB − lucroA/vendasA
+// (soma = variação total), separada em efeito MIX (vender mais do que tem margem menor) e efeito MARGEM (o próprio
+// item ficou pior). Itens de um pedido recebem tarifa, frete e tributos na proporção do valor.
+function acumulaMes(mes,custo,aliq){const T={venda:0,fee:0,frete:0,cmv:0,trib:0,lucro:0,pedidos:0,semCusto:0},canais={},prods={};
+ const S=(o,k)=>o[k]||(o[k]={venda:0,fee:0,frete:0,cmv:0,trib:0,lucro:0,u:0,nome:k});
+ for(const o of db.orders||[]){if(!String(o.date||'').startsWith(mes))continue;const x=lucroPedido(o,custo,aliq);if(!x||x.semTarifa)continue;if(x.falta){T.semCusto++;continue}
+  const g=nn(o.gross),its=o.items||[],tot=its.reduce((a,i)=>a+nn(i.qty)*nn(i.price),0);
+  for(const [obj,dv] of [[T,1],[S(canais,o.platform),1]]){obj.venda+=g*dv;obj.fee+=nn(o.fee);obj.frete+=x.frete;obj.cmv+=x.cmv;obj.trib+=x.trib;obj.lucro+=x.lucro}T.pedidos++;
+  for(const i of its){const q=nn(i.qty),sh=tot?q*nn(i.price)/tot:1/its.length,k=String(i.sku||i.title||'?').trim(),c=custo.get(k),p=S(prods,k);
+   if(i.title)p.nome=i.title;p.sku=k;const cm=c?(c.c+c.e)*q:0;p.venda+=g*sh;p.fee+=nn(o.fee)*sh;p.frete+=x.frete*sh;p.trib+=x.trib*sh;p.cmv+=cm;p.u+=q;p.lucro+=g*sh-nn(o.fee)*sh-x.frete*sh-x.trib*sh-cm}}
+ return {T,canais,prods}}
+const pc=(o,k)=>o&&o.venda?o[k]/o.venda:0;
+function efeitos(A,B,mapA,mapB){const VA=A.venda||1,VB=B.venda||1,mA=A.venda?A.lucro/A.venda:0,ks=new Set([...Object.keys(mapA),...Object.keys(mapB)]);let mix=0,marg=0;const itens=[];
+ for(const k of ks){const a=mapA[k],b=mapB[k],wA=(a?.venda||0)/VA,wB=(b?.venda||0)/VB,ma=a?.venda?a.lucro/a.venda:mA,mb=b?.venda?b.lucro/b.venda:ma;
+  // Mix: peso que mudou × (margem do item − margem média), para o total do mix somar zero quando só redistribui.
+  const eMix=(wB-wA)*(ma-mA),eMarg=wB*(mb-ma),contrib=(b?.lucro||0)/VB-(a?.lucro||0)/VA;mix+=eMix;marg+=eMarg;itens.push({k,a,b,wA,wB,ma:a?.venda?ma:null,mb:b?.venda?mb:null,eMix,eMarg,contrib})}
+ return {mix,marg,itens:itens.sort((x,y)=>x.contrib-y.contrib)}}
+/** O que mudou na margem de A para B: fatores, canais e produtos (com o que piorou em cada um). */
+function raiox(mA,mB){const custo=mapaCusto(),{r:aliq}=aliqTributos(),A=acumulaMes(mA,custo,aliq),B=acumulaMes(mB,custo,aliq),a=A.T,b=B.T;
+ const fat=[['tarifa','Tarifa dos marketplaces','fee'],['frete','Frete pago pela loja','frete'],['custo','Custo dos produtos','cmv'],['tributos','Tributos sobre a venda','trib']].map(([id,t,k])=>({id,t,a:pc(a,k),b:pc(b,k),efeito:-(pc(b,k)-pc(a,k))}));
+ const mA_=a.venda?a.lucro/a.venda:null,mB_=b.venda?b.lucro/b.venda:null,canais=efeitos(a,b,A.canais,B.canais),prods=efeitos(a,b,A.prods,B.prods);
+ // O que mudou em cada produto que puxou a margem para baixo (por unidade).
+ const diag=x=>{const a=x.a,b=x.b;if(!a?.u||!b?.u)return b?.u?'Produto novo no mês':'Deixou de vender';const pa=a.venda/a.u,pb=b.venda/b.u,ca=a.cmv/a.u,cb=b.cmv/b.u,ta=pc(a,'fee'),tb=pc(b,'fee'),fa=a.frete/a.u,fb=b.frete/b.u;
+  const l=[];if(pb<pa*0.97)l.push(['preco',(pb/pa-1),`Preço médio caiu ${((1-pb/pa)*100).toFixed(1).replace('.',',')}% (${money(pa)} → ${money(pb)}): campanha, cupom ou preço baixado`]);
+  if(cb>ca*1.03)l.push(['custo',(cb/ca-1),`Custo subiu ${((cb/ca-1)*100).toFixed(1).replace('.',',')}% (${money(ca)} → ${money(cb)}): renegociar ou repassar no preço`]);
+  if(tb>ta+0.01)l.push(['tarifa',tb-ta,`Tarifa subiu de ${p1(ta)} para ${p1(tb)}: conferir tipo de anúncio, faixa de comissão e campanhas`]);
+  if(fb>fa*1.1&&fb-fa>0.5)l.push(['frete',(fb/(fa||1)-1),`Frete por unidade subiu de ${money(fa)} para ${money(fb)}`]);
+  return l.length?l.sort((x,y)=>Math.abs(y[1])-Math.abs(x[1])).map(x=>x[2]).join(' · '):'Mudança pequena em vários fatores'};
+ for(const x of prods.itens)x.diag=diag(x);
+ return {mA,mB,a,b,margemA:mA_,margemB:mB_,variacao:mA_!=null&&mB_!=null?mB_-mA_:null,fatores:fat,aliq,canais,produtos:prods,semCusto:{a:a.semCusto,b:b.semCusto}}}
+/** Margem e fatores mês a mês (tendência). */
+function tendencia(meses){const custo=mapaCusto(),{r:aliq}=aliqTributos();return meses.map(m=>{const t=acumulaMes(m,custo,aliq).T;return {mes:m,venda:t.venda,tarifa:pc(t,'fee'),frete:pc(t,'frete'),custo:pc(t,'cmv'),tributos:pc(t,'trib'),margem:t.venda?t.lucro/t.venda:null}})}
+// Margem por unidade se o anúncio fosse vendido a outro preço (mesmas tarifas %, taxa fixa, frete e custo do histórico).
+function simular(sku,preco,canal='Mercado Livre'){try{const {peds,aliq,custoDe}=calcular(),a=anuncios(peds,aliq,custoDe).find(x=>x.canal===canal&&String(x.sku)===String(sku));if(!a||!preco)return null;
+ const varP=a.venda?(a.com-a.reb+a.outros)/a.venda:0,fixoU=(a.fixa+a.frete)/a.u,lucroU=preco*(1-varP-aliq)-fixoU-a.custo;
+ return {preco,lucroU,margem:lucroU/preco,atual:{preco:a.preco,lucroU:a.lucroU,margem:a.margem},eq:a.eq,min:a.min,vendas:a.u}}catch{return null}}
+// Tarifa, frete e tributos médios do período do Radar (sobre a venda): base do preço mínimo sem prejuízo de outras telas.
+function parametros(){try{const {peds,aliq}=calcular(),v=peds.reduce((x,p)=>x+p.o.gross,0);return v?{aliq,tarifa:peds.reduce((x,p)=>x+p.o.fee,0)/v,frete:peds.reduce((x,p)=>x+p.frete,0)/v}:null}catch{return null}}
+// Lucro de contribuição por canal e SKU num mês (chave "canal|sku"): base da tela Anúncios pagos.
+function lucroSkuCanal(mes){const custo=mapaCusto(),{r:aliq}=aliqTributos(),m=new Map();
+ for(const o of db.orders||[]){if(!String(o.date||'').startsWith(mes))continue;const x=lucroPedido(o,custo,aliq);if(!x)continue;const its=o.items||[],tot=its.reduce((a,i)=>a+nn(i.qty)*nn(i.price),0);
+  for(const i of its){const k=o.platform+'|'+String(i.sku||'').trim(),sh=tot?nn(i.qty)*nn(i.price)/tot:1/its.length,g=m.get(k)||{venda:0,lucro:0,u:0,semCusto:0,semTarifa:0,vendaMargem:0,nome:i.title||''};
+   g.venda+=nn(o.gross)*sh;g.u+=nn(i.qty);if(x.semTarifa)g.semTarifa++;else if(x.falta)g.semCusto++;else{g.lucro+=x.lucro*sh;g.vendaMargem+=nn(o.gross)*sh}m.set(k,g)}}
+ return m}
+window.Margem={/** Lucro de contribuição de cada pedido desde `ini` (só os que entram na margem: tarifa da API e custo de todos os itens). */pedidos:ini=>{const custo=mapaCusto(),{r:aliq}=aliqTributos(),out=[];for(const o of db.orders){if(o.date<ini)continue;const x=lucroPedido(o,custo,aliq);if(x&&!x.semTarifa&&!x.falta)out.push({o,...x})}return out},lucroSkuCanal,parametros,partes,diagnostico,mes:porMes,simular,raiox,tendencia,produto:produtoDesempenho,ranking:rankingProdutos,avisos:()=>{try{const {peds,aliq,custoDe}=calcular();const n=anuncios(peds,aliq,custoDe).filter(a=>a.st==='prejuizo'&&a.u>=3).length;return n?[['bad','radar',n+' anúncio(s) vendendo com prejuízo','Veja o preço mínimo por canal no Radar de margem','margem']]:[]}catch{return []}},resumo:()=>{const {peds}=calcular();const neg=peds.filter(x=>x.lucro<0);return {pedidos:peds.length,prejuizo:neg.length,perda:neg.reduce((s,x)=>s+x.lucro,0),venda:peds.reduce((s,x)=>s+x.o.gross,0),lucro:peds.reduce((s,x)=>s+x.lucro,0)}}};
+})();

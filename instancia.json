@@ -1,0 +1,29 @@
+{
+  "$schema": "ops/instancia/esquema.json",
+  "id": "compra-store",
+  "nome": "Compra Store",
+  "dominio": "jarvis.comprastore.com.br",
+  "project_ref": "qfmhohaceifezfzrdxyd",
+  "supabase_url": "https://qfmhohaceifezfzrdxyd.supabase.co",
+  "anon_key": "sb_publishable_s5P7McqI8_RmGOQjundI7g_Vlha-esy",
+  "vapid_publico": "BDpmom6t7wLuhuiaMBaThPoBE1VO2qfEQve-ERlWQcAWNMVjBxE93VASmTg5ILCGCuq1lhZrb9-zmG3G7PF6bYQ",
+  "suporte": {
+    "email": "contato@comprastore.com.br",
+    "whatsapp": null
+  },
+  "workspace_id": "6c2f6e77-d8cb-487b-8cf6-077c232f9360",
+  "funcoes": [
+    "integrations",
+    "oauth-callback",
+    "ai-assistant",
+    "gnre",
+    "navio-posicao",
+    "portal",
+    "ponto",
+    "contas-email"
+  ],
+  "demo": false,
+  "repositorio": "geklemann/jarvis-compra-store",
+  "cloudflare_pages": "jarvis-compra-store",
+  "privacidade_url": null
+}

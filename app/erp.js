@@ -1,0 +1,440 @@
+// © 2026 GK Soluções Empresariais LTDA (CNPJ 60.180.675/0001-91) · Todos os direitos reservados. Veja LICENSE e AUTORIA.md.
+'use strict';
+// Jarvis como ERP: estrutura (barra de módulos + menu da área + cabeçalho com busca, "+ Novo" e avisos),
+// Central do dia, telas de cadastro (lista + ficha), tela de lançamento de títulos e central de relatórios.
+(()=>{
+// ── Trava de endereço (trava 2, docs/seguranca/PROTECAO-DO-CODIGO.md) — reverificação independente da de trava-local.js ──
+// A lista vem do build (ops/trava-build.mjs carimba o marcador abaixo). Contextos de dev/teste são permitidos.
+const TRAVA_HOSTS=['jaarvis.com.br','www.jaarvis.com.br','localhost','127.0.0.1']; // JARVIS_TRAVA_HOSTS
+try{
+  if(typeof location!=='undefined'&&location&&location.hostname&&!['file:','about:','blob:'].includes(String(location.protocol||''))){
+    const h=String(location.hostname).toLowerCase();
+    if(!TRAVA_HOSTS.includes(h)){
+      window.__jarvisTravado=true;
+      const d=document;
+      if(d&&d.getElementById&&!d.getElementById('jarvis-trava-aviso')){
+        const box=d.createElement('div');box.id='jarvis-trava-aviso';box.setAttribute('role','alert');
+        box.style.cssText='position:fixed;inset:0;z-index:2147483647;background:#0c0e13;color:#e5e7eb;display:flex;align-items:center;justify-content:center;padding:24px;font:500 15px/1.5 system-ui,sans-serif;text-align:center';
+        box.innerHTML='<div style="max-width:520px"><div style="font-size:40px;margin-bottom:14px">⛔</div><h1 style="font-size:20px;margin:0 0 10px">Cópia não autorizada do Jarvis</h1><p style="margin:0 0 8px;color:#9aa4b2">Este sistema só pode ser executado nos endereços autorizados pela titular.</p><p style="margin:0;color:#6b7280;font-size:13px">© 2026 GK Soluções Empresariais LTDA · Todos os direitos reservados (Lei 9.609/1998 e 9.610/1998).</p></div>';
+        if(d.body)d.body.appendChild(box);else d.addEventListener&&d.addEventListener('DOMContentLoaded',()=>d.body&&d.body.appendChild(box));
+      }
+      return;
+    }
+  }
+}catch(e){}
+const ICONS={home:'M3 11 12 4l9 7 M5 10v10h14V10 M10 20v-6h4v6',folder:'M3 6a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z',print:'M6 9V3h12v6 M6 18H4a1 1 0 0 1-1-1v-6a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v6a1 1 0 0 1-1 1h-2 M6 14h12v7H6z',
+ search:'M11 18a7 7 0 1 0 0-14 7 7 0 0 0 0 14 M20 20l-3.5-3.5',bell:'M6 8a6 6 0 0 1 12 0c0 7 3 8 3 8H3s3-1 3-8 M10 21h4',x:'M6 6l12 12 M18 6 6 18',check:'M5 12l5 5L20 7',edit:'M4 20h4L19 9l-4-4L4 16z M14 6l4 4',
+ filter:'M3 5h18l-7 8v6l-4 2v-8z',layers:'M12 3 2 8l10 5 10-5z M2 13l10 5 10-5',alert:'M12 3 2 20h20z M12 10v4 M12 17h.01',spark:'M12 3v4 M12 17v4 M3 12h4 M17 12h4 M6 6l2.5 2.5 M15.5 15.5 18 18 M6 18l2.5-2.5 M15.5 8.5 18 6',chev:'M9 6l6 6-6 6'};
+for(const [k,v] of Object.entries(ICONS))if(!paths[k])paths[k]=v;
+const hoje=()=>new Date().toLocaleDateString('sv-SE');
+const addDias=(d,n)=>{const x=new Date(d+'T12:00:00');x.setDate(x.getDate()+n);return x.toLocaleDateString('sv-SE')};
+const addMeses=(d,n)=>{const x=new Date(d+'T12:00:00'),dia=x.getDate();x.setDate(1);x.setMonth(x.getMonth()+n);x.setDate(Math.min(dia,new Date(x.getFullYear(),x.getMonth()+1,0).getDate()));return x.toLocaleDateString('sv-SE')};
+const dataBR=d=>d?new Date(d+'T12:00:00').toLocaleDateString('pt-BR'):'—';
+const mesBR=m=>new Date(m+'-15T12:00:00').toLocaleDateString('pt-BR',{month:'long',year:'numeric'});
+const P=()=>db.payables||[];
+const saldoT=t=>round(Math.max(0,t.valor+(t.juros||0)-(t.desconto||0)-(t.valorPago||0)));
+const abertos=()=>P().filter(t=>!['pago','cancelado'].includes(t.status));
+const C=tipo=>(db.cadastros||(db.cadastros=[])).filter(c=>c.tipo===tipo);
+
+// ═════════════════ Estrutura ═════════════════
+const MODS=[
+ {id:'ini',ic:'home',t:'Início',grupos:[['Início',['resumo','pending']]]},
+ {id:'atd',ic:'headset',t:'Atendimento',grupos:[['Atendimento',['atendimento']],['Pós-venda',['devolucoes']],['Satisfação do cliente',['cx']]]},
+ {id:'ven',ic:'link',t:'Vendas',grupos:[['Acompanhar',['dashboard','metas']],['Vender',['vendadireta','b2b']],['Produtos e regiões',['produtos','estados','clientes']],['Lucro e preço',['margem','raiox','anuncios','concorrencia']],['Faturamento e repasses',['faturamento','reconcile','closing']]]},
+ {id:'est',ic:'box',t:'Estoque',grupos:[['Estoque',['estoque','estcompras','estparado','pedcompra','sazonal','travaestoque']],['Operação',['chegada','movestoque','inventario','separacao','conferencia']]]},
+ {id:'imp',ic:'ship',t:'Importações',grupos:[['Acompanhar',['importacoes']],['Cadastro',['impitens']],['Financeiro',['imppag']]]},
+ {id:'fin',ic:'wallet',t:'Financeiro',grupos:[['A pagar',['pagar','compras']],['A receber',['receber']],['Bancos',['tesouraria','concbanco','sispag']],['Caixa',['fluxo']]]},
+ {id:'orc',ic:'target',t:'Orçamento',grupos:[['Planejar',['orcvisao','orcpremissas','orcreceitas','orcdespesas','orcpessoal','orcinvest']],['Resultado',['orcdre','orccaixa','orcamento']]]},
+ {id:'fis',ic:'receipt',t:'Fiscal',grupos:[['Notas fiscais',['nfemitir','nfnotas','nfdevolucao','nfrecebidas']],['Tributos',['difal']],['Regras',['parametros','nfconfig']]]},
+ {id:'crm',ic:'heart',t:'CRM',grupos:[['Clientes',['crm','crmclientes']],['Vender mais',['crmacoes','crmfases','crmreguas']],['Produtos e regiões',['crmprodutos','crmgeo']]]},
+ {id:'cad',ic:'folder',t:'Cadastros',grupos:[['Parceiros',['fornecedores']],['Financeiro',['cadcontas','categorias','centros']],['Produtos',['catalogo','cadprodutos']],['Empresa',['dadosempresa','privacidade']]]},
+ {id:'res',ic:'chart',t:'Resultado',grupos:[['Análises',['rentabilidade']],['Contabilidade',['contabauto','fechcontab','contabil','planocontas']]]},
+ {id:'pre',ic:'tag',t:'Preços',grupos:[['Formação de preço',['formacao','promocao']]]},
+ {id:'pes',ic:'wallet',t:'Folha',grupos:[['Painel',['folhapainel']],['Cadastros',['pscolab','psprolabore']],['Folha de pagamento',['folha','psferias','psresc','psesocial']],['Ponto',['ponto']]]},
+{id:'rel',ic:'print',t:'Relatórios',grupos:[['Relatórios',['relfin','reports','diagnostico','alertasrel','cancelados','relshopee']]]}];
+// Tela principal de cada módulo: abre ao clicar no nome do módulo no menu e fica no topo da lista dele.
+const VISAO={ini:'resumo',pes:'folhapainel',orc:'orcvisao',atd:'atendimento',ven:'dashboard',est:'estoque',fin:'fluxo',fis:'nfnotas',crm:'crm',cad:'catalogo',imp:'importacoes',res:'contabauto',pre:'formacao',rel:'relfin'};
+window.ERP_MENU={get MODS(){return MODS},get GERAL(){return GERAL},get VISAO(){return VISAO},estrutura:(...a)=>estrutura(...a),primeiraTela:(...a)=>primeiraTela(...a),grupoVisivel:k=>grupoVisivel(k),alternarGrupo:k=>alternarGrupo(k),telaNoMenu:id=>telaNoMenu(id),modNoMenu:m=>modNoMenu(m)};
+const GERAL=['equipe','cxequipe','ai','history','auditoria','erros','integridade','fontes','integracoes','lancamento','imports'];
+for(const [id,t] of [['reconcile','Conciliação de vendas'],['pending','Pendências'],['closing','Fechamento de vendas'],['tesouraria','Bancos e saldos'],['fluxo','Fluxo de caixa'],['pagar','Contas a pagar'],['compras','Notas de entrada']]){const n=navItems.find(x=>x[0]===id);if(n)n[2]=t}
+const modDe=p=>p==='lancamento'?'fin':p==='integridade'||p==='fontes'||p==='erros'||p==='cxequipe'||p==='integracoes'||p==='central'||p==='bolso'?'ini':platforms[p]?'ven':MODS.find(m=>m.grupos.some(([,ids])=>ids.includes(p)))?.id;
+let modAtual=modDe(page)||'ini';
+// Grupos do menu ("módulo:grupo") começam fechados; abre sozinho só o grupo da tela atual. Clicar no título abre ou
+// fecha a lista e, ao abrir, fecha os outros grupos do mesmo módulo. grupoAberto: abertos pelo clique (some ao trocar de
+// tela); menuFechado: o grupo da tela atual, quando a pessoa o recolheu.
+const grupoAberto=new Set(),menuFechado=new Set();let menuSel=null;
+const grupoVisivel=k=>grupoAberto.has(k)||(k===grupoDe(page)&&!menuFechado.has(k));
+function alternarGrupo(k){const mid=k.slice(0,k.indexOf(':')),atual=grupoDe(page);
+ if(grupoVisivel(k)){grupoAberto.delete(k);if(k===atual)menuFechado.add(k);return false}
+ for(const x of [...grupoAberto])if(x.startsWith(mid+':'))grupoAberto.delete(x);
+ if(atual&&atual!==k&&atual.startsWith(mid+':'))menuFechado.add(atual);
+ if(k===atual)menuFechado.delete(k);else grupoAberto.add(k);return true}
+const nomePag=id=>navItems.find(n=>n[0]===id)?.[2]||(platforms[id]?id:id);
+const ico=(n,s=18)=>icon(n).replace('class="icon"',`class="icon" style="width:${s}px;height:${s}px"`);
+function contagens(){const h=hoje(),ab=abertos();return {vencidos:ab.filter(t=>t.vencimento<h),hoje:ab.filter(t=>t.vencimento===h),extrato:(db.bankTx||[]).filter(t=>t.status==='pendente').length,acessos:(window.Integrations?.state?.reqs||[]).length,notas:(db.purchases||[]).filter(n=>n.emissao&&n.emissao>=addDias(h,-3)&&n.tipo==='compra').length}}
+function avisos(){const c=contagens(),s=l=>money(round(l.reduce((a,t)=>a+saldoT(t),0)));const out=[];
+ if(c.vencidos.length)out.push(['bad','alert',`${c.vencidos.length} título(s) vencido(s)`,s(c.vencidos),'pagar']);
+ if(c.hoje.length)out.push(['warn','calendar',`${c.hoje.length} título(s) vencem hoje`,s(c.hoje),'pagar']);
+ if(c.extrato)out.push(['info','swap',`${c.extrato} movimento(s) do extrato a conciliar`,'Conciliação bancária','concbanco']);
+ if(c.notas)out.push(['info','receipt',`${c.notas} nota(s) de entrada nova(s)`,'Confira categorias e vencimentos','compras']);
+ if(c.acessos)out.push(['warn','users',`${c.acessos} pedido(s) de acesso`,'Equipe e acessos','equipe']);
+ out.push(...(window.Suporte?.avisos?.()||[]),...(window.Atendimento?.avisos?.()||[]),...(window.Estoque?.avisos?.()||[]),...(window.Faturamento?.avisos?.()||[]),...(window.Devolucoes?.avisos?.()||[]),...(window.NfDevolucao?.avisos?.()||[]),...(window.Difal?.avisos?.()||[]),...(window.Orcamento?.avisos?.()||[]),...(window.Margem?.avisos?.()||[]),...(window.Pagamentos?.avisos?.()||[]),...(window.NfRecebidas?.avisos?.()||[]),...(window.Resumo?.avisos?.()||[]),...(window.Ponto?.avisos?.()||[]));
+ return out}
+
+let paginaAnterior=null;
+// Menus sempre em ordem alfabética (Início fica no topo): módulos, grupos e telas de cada grupo, pelo nome que aparece.
+let ordemN=-1;function ordenarMenus(){if(ordemN===navItems.length)return;ordemN=navItems.length;const az=(x,y)=>String(x).localeCompare(String(y),'pt-BR',{sensitivity:'base'});
+ const ini=MODS.filter(m=>m.id==='ini'),resto=MODS.filter(m=>m.id!=='ini').sort((x,y)=>az(x.t,y.t));MODS.splice(0,MODS.length,...ini,...resto);
+ for(const m of MODS)if(m.id!=='pes')for(const g of m.grupos)g[1].sort((x,y)=>az(nomePag(x),nomePag(y)))} // Folha: na ordem do processo (mensal, férias, rescisão, eSocial)
+// Telas de Vendas que o CRM tem em versão completa: com o CRM liberado, o menu mostra só a do CRM (e o link leva para ela).
+const DUP_CRM={produtos:'crmprodutos',estados:'crmgeo',clientes:'crmclientes'};
+const crmCobre=id=>!!DUP_CRM[id]&&window.Perfis?.moduloVisivel?.('crm')!==false&&navItems.some(n=>n[0]===DUP_CRM[id])&&window.Perfis?.paginaVisivel?.(DUP_CRM[id])!==false;
+// O que este usuário vê no menu: telas existentes que o perfil libera (Oportunidades só no nicho certo, telas de Vendas
+// que o CRM cobre ficam só no CRM) e módulos liberados (Folha só para quem criou a empresa, como o Ponto).
+const telaNoMenu=id=>navItems.some(n=>n[0]===id)&&window.Perfis?.paginaVisivel?.(id)!==false&&(id!=='crmfases'||window.CRMx?.nicho?.()!==false)&&!crmCobre(id);
+const modNoMenu=m=>window.Perfis?.moduloVisivel?.(m.id)!==false&&(m.id!=='pes'||window.Ponto?.acesso===true);
+// Módulo como aparece no menu: a tela principal (VISAO) no topo e, abaixo, os grupos com as telas visíveis, na ordem do
+// menu (grupo que fica vazio some). vis = quais telas o usuário vê (os testes passam outra regra).
+function estrutura(m,vis=telaNoMenu){ordenarMenus();const ids=m.grupos.flatMap(([,l])=>l).filter(id=>vis(id)),ov=VISAO[m.id],principal=ov&&ids.includes(ov)?ov:null;
+ return {principal,ids,grupos:m.grupos.map(([t,l])=>[t,l.filter(i=>i!==principal&&ids.includes(i))]).filter(([,l])=>l.length)}}
+// Tela que abre ao clicar no módulo: a principal, se o usuário a vê; senão a primeira tela visível do primeiro grupo.
+// Com grupo: a primeira tela visível daquele grupo (como aparece no menu). null quando não há tela visível.
+// Telas que não usam a competência do cabeçalho (estoque, compras, importações, folha e ponto): sem o seletor de mês.
+const SEM_MES=new Set(['estoque','estcompras','estparado','inventario','pedcompra','separacao','movestoque','chegada','sazonal','importacoes','impitens','imppag','conferencia','folha','folhapainel','ponto','pessoas','pscolab','psprolabore','psferias','psresc','psesocial']);
+function primeiraTela(mid,grupo=null,vis=telaNoMenu){const m=MODS.find(x=>x.id===mid);if(!m)return null;const e=estrutura(m,vis);
+ if(grupo!=null)return e.grupos.find(([t])=>t===grupo)?.[1][0]||null;
+ return e.principal||e.grupos[0]?.[1][0]||null}
+// Grupo de uma tela no menu ("módulo:grupo"); abrir uma tela pela busca, atalho ou aviso abre o grupo dela.
+const grupoDe=p=>{for(const m of MODS)for(const [t,l] of m.grupos)if(l.includes(p))return m.id+':'+t;return null};
+shell=function(){ordenarMenus();if(crmCobre(page))page=DUP_CRM[page];if(page==='pessoas')page='pscolab';{const mp=modDe(page);if(window.Perfis&&((mp&&!Perfis.moduloVisivel(mp))||Perfis.paginaVisivel?.(page)===false)){page=Perfis.inicio()}}const pm=modDe(page);if(pm)modAtual=pm;if(page!==paginaAnterior){paginaAnterior=page;menuSel=null;grupoAberto.clear();menuFechado.delete(grupoDe(page))}const M=MODS.find(m=>m.id===modAtual)||MODS[0],cur=nomePag(page),av=avisos(),modCrumb=page==='lancamento'?MODS.find(m=>m.id==='fin'):platforms[page]?MODS.find(m=>m.id==='ven'):MODS.find(m=>m.grupos.some(([,l])=>l.includes(page)));
+ const item=id=>{const n=navItems.find(x=>x[0]===id);if(!n)return '';const c=contagens();const badge=id==='pagar'&&c.vencidos.length?c.vencidos.length:id==='concbanco'&&c.extrato?c.extrato:id==='equipe'&&c.acessos?c.acessos:id==='atendimento'?(window.Atendimento?.abertos?.()||0):0;
+  return `<button data-nav="${id}" class="${page===id?'active':''}">${ico(n[1],17)}<span>${n[2]}</span>${badge?`<em class="navcount">${badge}</em>`:''}</button>`};
+ const meses=[...new Set([month,...db.orders.map(o=>o.date.slice(0,7)),...P().map(t=>t.vencimento.slice(0,7))])].filter(m=>m>='2020'&&m<=hoje().slice(0,7)).sort().reverse().slice(0,36); // nada de mês futuro (sem dados)
+ const emp=esc(window.Marca?.nome?.()||window.Cloud?.wsName||'Minha empresa');
+ $('#app').innerHTML=`<div class="erp">
+ <aside class="side"><button class="sidebrand" data-nav="resumo" aria-label="Início"><img class="sidelogo" src="${esc(window.Marca?.logo?.()||'brand/jarvis-192.png')}" alt=""><span><strong>${emp}</strong><small>Jarvis · E-Commerce</small></span></button>
+  <nav class="menu" aria-label="Menu principal">${MODS.filter(modNoMenu).map(m=>{const e=estrutura(m),ids=e.ids,unico=ids.length===1&&!m.plataformas,ativo=m.id===M.id,aberto=(menuSel??M.id)===m.id,cab=e.grupos.length>1;
+   if(unico)return `<button class="mhead ${page===ids[0]?'active':''}" data-nav="${ids[0]}">${ico(m.ic,20)}<span>${m.t}</span></button>`;
+   return `<div class="mgroup ${aberto?'open':''} ${ativo?'cur':''}"><button class="mhead" data-mtoggle="${m.id}" aria-expanded="${aberto}">${ico(m.ic,20)}<span>${m.t}</span><i class="mchev" data-mchev="1" title="Só abrir ou fechar a lista">${ico('chev',15)}</i></button>${aberto?`<div class="mitems">${e.principal?item(e.principal):''}${e.grupos.map(([t,l])=>{const k=m.id+':'+t,ga=grupoVisivel(k),gc=l.includes(page);return cab?`<button class="msub ${ga?'open':''} ${gc?'cur':''}" data-mgrupo="${esc(k)}" aria-expanded="${ga}"><span>${esc(t)}</span><em class="mqtd" aria-label="${l.length} tela(s)">${l.length}</em>${ico('chev',12)}</button>${ga?`<div class="mgrp">${l.map(item).join('')}</div>`:''}`:l.map(item).join('')}).join('')}${m.plataformas?Object.keys(platforms).map(p=>`<button data-nav="${p}" class="${page===p?'active':''}"><span class="platdot" style="background:${platforms[p].color}"></span><span>${p}</span></button>`).join(''):''}</div>`:''}</div>`}).join('')}</nav>${window.JarvisAutoriaRodape?.()||''}</aside>
+ <main><header><button class="quiet mobilemenu" data-action="menu" aria-label="Abrir navegação">${icon('menu')}</button>
+  <button class="searchbox" data-erp="busca">${ico('search',16)}<span>Buscar pedido, nota, fornecedor, título…</span><kbd>Ctrl K</kbd></button>
+  <div class="row hdrright" style="margin-left:auto"><button class="primary newbtn" data-erp="novo">${ico('plus',16)} Novo</button><button class="quiet iconbtn" data-erp="avisos" aria-label="Avisos">${ico('bell',19)}${av.length?`<i class="belldot">${av.length}</i>`:''}</button><span class="demo">BASE OPERACIONAL</span><button class="userbtn" data-erp="usuario" aria-label="Menu do usuário"><span class="avatar">${esc(iniciais())}</span>${contagens().acessos?'<i class="userdot"></i>':''}${ico('chev',14)}</button></div></header>
+ <div class="content"><div class="pagehead"><div><div class="crumb">${modCrumb?`${esc(modCrumb.t)} <span>›</span> `:''}${esc(cur)}</div><h1>${page==='central'?`Bom dia${window.Cloud?.session?.user?.email?'':''}`:esc(cur)}</h1><p>${subtitle()}</p></div>
+  <div class="row wrap pageactions">${SEM_MES.has(page)?'':`<label class="monthsel">${ico('calendar',16)}<select id="month" aria-label="Competência">${meses.map(m=>`<option value="${m}" ${month===m?'selected':''}>${mesBR(m)}</option>`).join('')}</select></label>`}</div></div>
+ ${window.Perfis?.somenteLeitura?.(page)?'<div class="notice" role="status" style="margin-bottom:12px">Você tem acesso <b>só de consulta</b> a esta tela. Para alterar algo, peça ao administrador da empresa.</div>':''}<div id="view"></div><div class="footer"><span>Jarvis</span><span><span class="dot"></span>Seu controle começa com clareza.</span></div></div></main></div>
+ <div id="erpdrop"></div>`;
+ if($('#month'))$('#month').onchange=e=>{month=e.target.value;render()};
+ if(page==='central')$('.pagehead h1').textContent=saudacao()};
+// Nome do usuário: o informado no cadastro; sem ele, a primeira parte do e-mail (joao.silva@… → João).
+const nomeUsuario=()=>{const u=window.Cloud?.session?.user;const n=(u?.user_metadata?.nome||'').trim();if(n)return n.split(/\s+/)[0];const e=(u?.email||'').split('@')[0].split(/[._\-0-9]/)[0];return e?e.charAt(0).toUpperCase()+e.slice(1):''};
+const iniciais=()=>{const u=window.Cloud?.session?.user,p=String(u?.user_metadata?.nome||'').trim().split(/\s+/).map(w=>w.replace(/[^\p{L}]/gu,'')).filter(Boolean);if(p.length)return (p[0][0]+(p.length>1?p[p.length-1][0]:'')).toUpperCase();const e=String(u?.email||'').split('@')[0].replace(/[^a-z]/gi,'');return (e.slice(0,2)||'?').toUpperCase()};
+window.Iniciais=iniciais; // o mesmo círculo no topo e dentro do menu do usuário (features.js repinta os .avatar)
+const saudacao=()=>{const h=new Date().getHours(),n=nomeUsuario();return `${h<12?'Bom dia':h<18?'Boa tarde':'Boa noite'}${n?', '+n:''}`};
+
+// Menus suspensos do cabeçalho: "+ Novo", avisos e empresa.
+function drop(html,anchor){html=String(html).replace(/<button class="dropitem" data-nav="([a-z]+)">[\s\S]*?<\/button>/g,(m,id)=>window.Perfis?.paginaVisivel?.(id)===false?'':m);const r=anchor.getBoundingClientRect(),d=$('#erpdrop');d.innerHTML=`<div class="dropmenu" style="top:${r.bottom+8}px;--drop-top:${Math.round(r.bottom+8)}px;${r.left>innerWidth/2?`right:${Math.max(12,innerWidth-r.right)}px`:`left:${r.left}px`}">${html}</div>`}
+document.addEventListener('click',e=>{const dm=e.target.closest('.dropmenu');const b=e.target.closest('[data-erp]');if(!dm&&!b)$('#erpdrop')&&($('#erpdrop').innerHTML='');
+ if(dm&&e.target.closest('[data-nav],[data-erp-go]'))setTimeout(()=>$('#erpdrop').innerHTML='',0);
+ if(!b)return;const a=b.dataset.erp;
+ if(a==='novo')drop([['lancamento','wallet','Lançamento a pagar','Despesa, boleto, contrato, parcelado ou recorrente'],['@extrato','upload','Importar extrato bancário','OFX ou planilha do internet banking'],['@forn','users','Fornecedor','Ficha de cadastro'],['@conta','bank','Conta bancária','Cadastro de conta ou carteira'],['imports','file','Importar relatório de vendas','CSV, Excel ou PDF'],['contabil','book','Balancete do escritório','PDF ou Excel → DRE']].map(([k,ic,t,s])=>`<button class="dropitem" ${k.startsWith('@')?`data-erp-go="${k}"`:`data-nav="${k}"`}>${ico(ic,18)}<span><strong>${t}</strong><small>${s}</small></span></button>`).join('')+'<input type="file" id="erpExtrato" accept=".ofx,.OFX,.csv,.xlsx,.xls" multiple hidden>',b);
+ if(a==='avisos'){const av=avisos();drop(`<div class="drophead">Avisos</div>${av.map(([tom,ic,t,s,nav])=>`<button class="dropitem" data-nav="${nav}"><span class="avico ${tom}">${ico(ic,16)}</span><span><strong>${t}</strong><small>${s}</small></span></button>`).join('')||'<p class="caption" style="padding:10px 14px">Nada pendente. ✓</p>'}`,b)}
+ if(a==='empresa')drop(`<div class="drophead">${esc(window.Cloud?.wsName||'Empresa')}</div>${(window.Cloud?.workspaces||[]).length>1?Cloud.workspaces.map(w=>`<button class="dropitem" data-erp-ws="${esc(w.id)}"><span><strong>${esc(w.name)}</strong><small>${w.id===Cloud.ws?'aberta':''}</small></span></button>`).join(''):''}<button class="dropitem" data-nav="equipe">${ico('users',18)}<span><strong>Equipe e acessos</strong><small>Liberar usuários</small></span></button><button class="dropitem" data-nav="integracoes">${ico('plug',18)}<span><strong>Integrações</strong><small>Bling, marketplaces</small></span></button>`,b);
+ if(a==='busca')busca();
+ if(a==='usuario'){const email=window.Cloud?.session?.user?.email||'',n=contagens().acessos,wss=window.Cloud?.workspaces||[];
+  const nomeCompleto=(window.Cloud?.session?.user?.user_metadata?.nome||'').trim();drop(`<div class="userhead"><span class="avatar big">${esc(iniciais())}</span><span><strong>${esc(nomeCompleto||email||'Modo local')}</strong><small>${esc(nomeCompleto?email:'')}</small><small>${esc(window.Perfis?.nome?.()||'')} · ${esc(window.Cloud?.wsName||'')}</small></span></div>
+  <button class="dropitem" data-nav="equipe">${ico('users',18)}<span><strong>Equipe e acessos</strong><small>Liberar usuários e papéis</small></span>${n?`<em class="navcount">${n}</em>`:''}</button>
+  ${window.Cloud?.ws?`<button class="dropitem" data-erp-nome="1">${ico('edit',18)}<span><strong>Alterar meu nome</strong><small>Como você aparece no portal</small></span></button>`:''}
+  <button class="dropitem" data-erp-seg="1">${ico('lock',18)}<span><strong>Segurança da conta</strong><small>Verificação em duas etapas, senha e sessão</small></span></button>
+  <button class="dropitem" data-nav="fontes">${ico('link',18)}<span><strong>De onde vêm os números</strong><small>Fontes de cada tela, atualização e o que conferir</small></span></button>
+  <button class="dropitem" data-nav="integridade">${ico('shield',18)}<span><strong>Segurança e integridade</strong><small>Teste agora se os dados estão íntegros e protegidos</small></span></button>
+  <button class="dropitem" data-nav="auditoria">${ico('shield',18)}<span><strong>Log e auditoria</strong><small>Cada inclusão, alteração e exclusão, com quem e quando</small></span></button>
+  ${['owner','member'].includes(window.Cloud?.role||'owner')?`<button class="dropitem" data-nav="cxequipe">${ico('smile',18)}<span><strong>Avaliação do Jarvis</strong><small>Notas e comentários da equipe sobre o sistema</small></span></button>`:''}
+  ${window.Cloud?.role==='owner'?`<button class="dropitem" data-nav="erros">${ico('bug',18)}<span><strong>Central de erros</strong><small>Falhas na tela da equipe e no servidor</small></span>${window.CentralErros?.abertos?.()?`<em class="navcount">${window.CentralErros.abertos()}</em>`:''}</button>`:''}
+  <button class="dropitem" data-nav="integracoes">${ico('plug',18)}<span><strong>Integrações</strong><small>ERP e marketplaces</small></span></button>
+  ${wss.length>1?wss.map(w=>`<button class="dropitem" data-erp-ws="${esc(w.id)}">${ico('folder',18)}<span><strong>${esc(w.name)}</strong><small>${w.id===Cloud.ws?'empresa aberta':'trocar para esta empresa'}</small></span></button>`).join(''):''}
+  <button class="dropitem" data-erp-tema="1">${ico(db.theme==='light'?'moon':'sun',18)}<span><strong>Aparência</strong><small>Temas, cores e modo claro/escuro</small></span></button>
+  <button class="dropitem" data-al="abrir">${ico('bell',18)}<span><strong>Alertas no celular</strong><small>Avisos de NF-e, reclamações, estoque e contas</small></span></button>
+  <button class="dropitem" data-nav="suporte">${ico('help',18)}<span><strong>Manual e suporte</strong><small>Manual completo e chamados de suporte</small></span>${(()=>{const a=window.Suporte?.avisos?.()||[];return a.length?`<em class="navcount">${a[0][2].match(/\d+/)?.[0]||'!'}</em>`:''})()}</button>
+  ${window.Cloud?.ws?`<button class="dropitem" data-cloud="logout">${ico('logout',18)}<span><strong>Sair</strong><small>Encerrar a sessão</small></span></button>`:''}`,b)}
+});
+document.addEventListener('click',e=>{const g=e.target.closest('[data-erp-go]');if(g){const k=g.dataset.erpGo;$('#erpdrop').innerHTML='';if(k==='@extrato'){const i=document.createElement('input');i.type='file';i.multiple=true;i.accept='.ofx,.OFX,.csv,.xlsx,.xls';i.onchange=()=>Tesouraria.importarArquivos(i.files);i.click()}if(k==='@forn'){cadUI('fornecedores').modo='ficha';cadUI('fornecedores').id=null;navigate('fornecedores')}if(k==='@conta'){cadUI('cadcontas').modo='ficha';cadUI('cadcontas').id=null;navigate('cadcontas')}}
+ const w=e.target.closest('[data-erp-ws]');if(w)Cloud.switchWs(w.dataset.erpWs)});
+
+// Busca geral (Ctrl K): telas, fornecedores, títulos, notas e pedidos.
+function busca(){modal('Buscar no Jarvis',`<input id="bgQ" type="search" placeholder="Digite: nome do fornecedor, número da nota, pedido, valor, tela…" style="width:100%;font-size:16px;padding:14px 16px" autocomplete="off"><div id="bgRes" class="bgres"></div>`);const q=$('#bgQ');q.focus();const run=()=>{const r=window.Hoje?.regra?.(q.value);$('#bgRes').innerHTML=(r?`<div class="bganswer">${r}</div>`:'')+(q.value.trim()?'':`<div class="bghint">${['vendas de hoje','o que vence','caixa','estoque','tributos do mês','notas sem emissão'].map(t=>`<button class="small" data-bg-dica="${t}">${t}</button>`).join('')}</div>`)+((res=>r&&/Nada encontrado/.test(res)?'':res)(resultados(q.value)))};
+ $('#bgRes').onclick=e=>{const d=e.target.closest('[data-bg-dica]');if(d){q.value=d.dataset.bgDica;run();q.focus();return}if(e.target.closest('.bganswer [data-nav]'))setTimeout(closeModal,0)};q.oninput=run;q.onkeydown=e=>{if(e.key==='Enter'){const f=$('#bgRes [data-nav],#bgRes [data-order],#bgRes [data-pg-edit],#bgRes [data-cad-abrir]');if(f){f.click();closeModal()}}};run()}
+// Ações rápidas do Ctrl K: fazem, não só navegam.
+const ACOES_RAPIDAS=[['data-nav="suporte"','help','Manual e suporte','manual do sistema e abrir chamado de suporte'],['data-nav="mapa"','folder','Mapa do ERP','todas as telas e para que serve cada uma'],['data-hj="painel"','grid','Modo painel (TV)','tela cheia com vendas e pedidos ao vivo'],['data-nav="inventario"','scan','Iniciar inventário','contar estoque com leitor de código de barras'],['data-nav="pedcompra"','clipboard','Novo pedido de compra','a partir da sugestão de compras'],['data-nav="separacao"','box','Lista de separação de hoje','imprimir itens por localização'],
+ ['data-erp-go="@extrato"','upload','Importar extrato bancário','OFX ou planilha'],['data-nav="lancamento"','wallet','Lançar conta a pagar','boleto, contrato, recorrente'],['data-nav="margem"','radar','Pedidos com prejuízo','radar de margem'],
+ ['data-nav="faturamento"','receipt','Emitir nota fiscal','NF-e pelo Jarvis'],['data-nav="parametros"','sliders','Regras fiscais e contábeis','parametrização e aprovação da contabilidade'],['data-nav="contabauto"','ledger','Balancete e DRE automáticos','contabilidade automática'],
+ ['data-erp-tema="1"','sun','Trocar tema e cores','aparência'],['data-erp-seg="1"','lock','Ativar verificação em duas etapas','segurança da conta'],['data-nav="auditoria"','shield','Ver quem alterou o quê','log e auditoria']];
+function resultados(txt){const q=normalized(txt).trim();const grupo=(t,l)=>l.length?`<div class="bggroup">${t}</div>${l.join('')}`:'';const linha=(attr,ic,t,s)=>`<button class="dropitem" ${attr}>${ico(ic,17)}<span><strong>${esc(t)}</strong><small>${esc(s)}</small></span></button>`;
+ const telas=[...navItems.map(n=>[n[0],n[1],n[2]]),...Object.keys(platforms).map(p=>[p,'link',p])].filter(([id,,t])=>!q||normalized(t).includes(q)).slice(0,q?8:12).map(([id,ic,t])=>linha(`data-nav="${id}"`,ic,t,MODS.find(m=>m.id===modDe(id))?.t||''));
+ const acoes=ACOES_RAPIDAS.filter(([,,t,s])=>!q||normalized(t+' '+s).includes(q)).slice(0,q?6:5).map(([attr,ic,t,s])=>linha(attr,ic,t,s));
+ if(!q)return grupo('Ações rápidas',acoes)+grupo('Telas',telas);const num=Number(txt.replace(/\./g,'').replace(',','.'));
+ const forn=C('forn').filter(c=>normalized(c.dados.razao+' '+c.dados.fantasia+' '+c.dados.doc).includes(q)).slice(0,5).map(c=>linha(`data-cad-abrir="fornecedores:${esc(c.id)}"`,'users',c.dados.fantasia||c.dados.razao,c.dados.doc||'Fornecedor'));
+ const tit=P().filter(t=>normalized([t.fornecedor,t.descricao,t.documento].join(' ')).includes(q)||(num&&Math.abs(t.valor-num)<0.01)).slice(0,6).map(t=>linha(`data-pg-edit="${esc(t.id)}"`,'wallet',`${t.fornecedor||t.descricao} · ${money(t.valor)}`,`venc. ${dataBR(t.vencimento)} · ${t.status}`));
+ const notas=(db.purchases||[]).filter(n=>normalized([n.numero,n.fornecedor,n.chave].join(' ')).includes(q)).slice(0,5).map(n=>linha(`data-pg-nota="${esc(n.id)}"`,'receipt',`NF ${n.numero||''} · ${n.fornecedor||''}`,`${dataBR(n.emissao)} · ${money(n.valor)}`));
+ const ped=db.orders.filter(o=>normalized(o.id+' '+(o.nf||'')).includes(q)||(num&&Math.abs(o.gross-num)<0.01)).slice(0,6).map(o=>linha(`data-order="${esc(o.id)}"`,'box',`Pedido ${o.id}`,`${o.platform} · ${dataBR(o.date)} · ${money(o.gross)}`));
+ const out=grupo('Ações rápidas',acoes)+grupo('Telas',telas)+grupo('Fornecedores',forn)+grupo('Títulos a pagar',tit)+grupo('Notas de entrada',notas)+grupo('Pedidos',ped);return out||'<p class="caption" style="padding:14px">Nada encontrado.</p>'}
+document.addEventListener('keydown',e=>{if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='k'&&window.Cloud?.ws!==null){e.preventDefault();busca()}});
+document.addEventListener('click',e=>{const b=e.target.closest('[data-cad-abrir]');if(!b)return;const [pg,id]=b.dataset.cadAbrir.split(':');closeModal();const u=cadUI(pg);u.modo='ficha';u.id=id;navigate(pg)},true);
+document.addEventListener('click',e=>{if(e.target.closest('#bgRes [data-nav],#bgRes [data-order],#bgRes [data-pg-nota]'))setTimeout(()=>{if(!e.target.closest('[data-order],[data-pg-nota]'))closeModal()},0)});
+// Nome do módulo no menu: abre a tela principal dele (primeiraTela) e a lista do módulo; no celular o menu fecha, como
+// ao escolher uma tela. Já na tela principal, o nome só abre ou fecha a lista; a setinha sempre só abre ou fecha.
+// Título de um grupo: só abre ou fecha a lista dele (alternarGrupo); a tela muda ao escolher uma opção.
+// Enter/Espaço no item com foco funcionam igual (o foco volta para o mesmo item depois de redesenhar o menu).
+const redesenhar=(sel,teclado)=>{shell();$('#view').innerHTML='';render();if(teclado)document.querySelector(sel)?.focus()};
+const irPeloMenu=(alvo,sel,teclado)=>{window.Reiniciar?.tudo?.();navigate(alvo);if(teclado&&!document.body.classList.contains('menu'))document.querySelector(sel)?.focus()};
+document.addEventListener('click',e=>{const b=e.target.closest('[data-mtoggle]');if(!b)return;e.stopImmediatePropagation();const id=b.dataset.mtoggle,aberto=b.closest('.mgroup')?.classList.contains('open'),sel=`[data-mtoggle="${id}"]`,teclado=e.detail===0;
+ const alvo=primeiraTela(id);
+ if(!alvo||page===alvo||e.target.closest('[data-mchev]')){menuSel=aberto?'__nenhum':id;redesenhar(sel,teclado);return}
+ irPeloMenu(alvo,sel,teclado)},true);
+document.addEventListener('click',e=>{const b=e.target.closest('[data-mgrupo]');if(!b)return;e.stopImmediatePropagation();const k=b.dataset.mgrupo,sel=`[data-mgrupo="${CSS.escape(k)}"]`;
+ menuSel=k.slice(0,k.indexOf(':'));alternarGrupo(k);redesenhar(sel,e.detail===0)},true);
+
+// ═════════════════ Central do dia ═════════════════
+function projecao(dias=30){const h=hoje(),s=window.Tesouraria?.saldos()||{total:0,contas:[]};let saldo=s.total;const serie=[];
+ const entradas=new Map(),saidas=new Map();const add=(m,d,v)=>m.set(d,round((m.get(d)||0)+v));
+ for(const o of db.orders){if(!['A receber','Em trânsito'].includes(status(o)))continue;const falta=round(net(o)-paid(o));if(falta<=0)continue;let d=o.due||addDias(o.date,30);if(d<addDias(h,-15))continue;if(d<h)d=h;add(entradas,d,falta)}
+ for(const t of abertos()){const d=t.vencimento<h?h:t.vencimento;add(saidas,d,saldoT(t))}
+ for(let i=0;i<dias;i++){const d=addDias(h,i),en=entradas.get(d)||0,sa=saidas.get(d)||0;saldo=round(saldo+en-sa);serie.push({d,en,sa,saldo})}return {serie,inicial:s.total,contas:s.contas}}
+function graficoCaixa(serie){const W=900,H=260,max=Math.max(1,...serie.map(x=>Math.max(x.en,x.sa))),smin=Math.min(0,...serie.map(x=>x.saldo)),smax=Math.max(1,...serie.map(x=>x.saldo)),bw=W/serie.length;
+ const yb=v=>H-30-(v/max)*(H-60),ys=v=>20+(1-(v-smin)/((smax-smin)||1))*(H-60);
+ grafico={serie,W,bw,ys};
+ return `<div class="cashwrap"><svg viewBox="0 0 ${W} ${H}" class="cashchart" id="cashSvg" role="img" aria-label="Caixa projetado">${[0,1,2,3].map(i=>`<line x1="0" x2="${W}" y1="${20+i*(H-50)/3}" y2="${20+i*(H-50)/3}" class="grid"/>`).join('')}
+ ${serie.map((x,i)=>`${x.en?`<rect x="${i*bw+bw*.12}" y="${yb(x.en)}" width="${bw*.34}" height="${H-30-yb(x.en)}" rx="2" class="en"><title>${dataBR(x.d)} · entradas ${money(x.en)}</title></rect>`:''}${x.sa?`<rect x="${i*bw+bw*.5}" y="${yb(x.sa)}" width="${bw*.34}" height="${H-30-yb(x.sa)}" rx="2" class="sa"><title>${dataBR(x.d)} · saídas ${money(x.sa)}</title></rect>`:''}`).join('')}
+ <polyline class="saldo" points="${serie.map((x,i)=>`${i*bw+bw/2},${ys(x.saldo)}`).join(' ')}"/>${serie.filter((_,i)=>i%7===0).map((x,i)=>`<text x="${i*7*bw+2}" y="${H-8}">${dataBR(x.d).slice(0,5)}</text>`).join('')}${rotulosCaixa(serie,bw,yb,ys,H)}<line id="ccLine" class="hovline" x1="0" x2="0" y1="12" y2="${H-28}" visibility="hidden"/><circle id="ccDot" class="hovdot" r="6" cx="0" cy="0" visibility="hidden"/><rect x="0" y="0" width="${W}" height="${H}" fill="transparent" id="ccHit"/></svg><div class="cctip" id="ccTip" hidden></div></div>`}
+// Rótulos: saldo no início, no ponto mais baixo e no fim; valor das 3 maiores entradas e saídas.
+const kfmt=v=>{const a=Math.abs(v),s=v<0?'−':'';return a>=1e6?s+(a/1e6).toLocaleString('pt-BR',{maximumFractionDigits:2})+' mi':a>=1e3?s+Math.round(a/1e3)+' mil':s+Math.round(a)};
+function rotulosCaixa(serie,bw,yb,ys,H){if(!serie.length)return '';const L=[],n=serie.length-1,menor=serie.reduce((m,x,i)=>x.saldo<serie[m].saldo?i:m,0);
+ const lab=(i,y,t,cls)=>{const x=Math.min(Math.max(i*bw+bw/2,34),900-34);L.push(`<text class="cclab ${cls}" x="${x}" y="${y}" text-anchor="middle">${t}</text>`)};
+ lab(0,ys(serie[0].saldo)-10,'R$ '+kfmt(serie[0].saldo),'s');if(menor!==0&&menor!==n)lab(menor,ys(serie[menor].saldo)+18,'mín. '+kfmt(serie[menor].saldo),'s');lab(n,ys(serie[n].saldo)-10,'R$ '+kfmt(serie[n].saldo),'s');
+ const top=(k)=>serie.map((x,i)=>[i,x[k]]).filter(x=>x[1]>0).sort((a,b)=>b[1]-a[1]).slice(0,3);
+ for(const [i,v] of top('sa'))L.push(`<text class="cclab sa" x="${i*bw+bw*.67}" y="${Math.max(12,yb(v)-4)}" text-anchor="middle">−${kfmt(v)}</text>`);
+ for(const [i,v] of top('en'))L.push(`<text class="cclab en" x="${i*bw+bw*.29}" y="${Math.max(12,yb(v)-4)}" text-anchor="middle">+${kfmt(v)}</text>`);
+ return L.join('')}
+// Ponto que acompanha o mouse (ou o dedo) e mostra os números do dia.
+let grafico=null;
+function bindGrafico(){const svg=$('#cashSvg');if(!svg||!grafico)return;const {serie,W,bw,ys}=grafico,tip=$('#ccTip'),line=$('#ccLine'),dot=$('#ccDot');
+ const mover=cx=>{const r=svg.getBoundingClientRect(),k=W/r.width,i=Math.max(0,Math.min(serie.length-1,Math.floor((cx-r.left)*k/bw))),x=serie[i],px=i*bw+bw/2;
+  line.setAttribute('x1',px);line.setAttribute('x2',px);dot.setAttribute('cx',px);dot.setAttribute('cy',ys(x.saldo));line.setAttribute('visibility','visible');dot.setAttribute('visibility','visible');
+  tip.hidden=false;tip.innerHTML=`<strong>${new Date(x.d+'T12:00:00').toLocaleDateString('pt-BR',{weekday:'short',day:'2-digit',month:'2-digit'})}</strong><span><i style="background:var(--green)"></i>Entradas <b>${money(x.en)}</b></span><span><i style="background:var(--red)"></i>Saídas <b>${money(x.sa)}</b></span><span><i style="background:var(--accent)"></i>Saldo <b class="${x.saldo<0?'red':''}">${money(x.saldo)}</b></span>`;
+  const left=px/k,top=ys(x.saldo)/k,w=tip.offsetWidth;tip.style.left=Math.max(0,Math.min(r.width-w,left-w/2))+'px';tip.style.top=Math.max(0,top-tip.offsetHeight-14)+'px'};
+ const sair=()=>{tip.hidden=true;line.setAttribute('visibility','hidden');dot.setAttribute('visibility','hidden')};
+ svg.onmousemove=e=>mover(e.clientX);svg.onmouseleave=sair;svg.ontouchmove=e=>{mover(e.touches[0].clientX)};svg.ontouchend=sair}
+// ═════════════════ Cadastros (lista + ficha) ═════════════════
+const UF=['','AC','AL','AM','AP','BA','CE','DF','ES','GO','MA','MG','MS','MT','PA','PB','PE','PI','PR','RJ','RN','RO','RR','RS','SC','SE','SP','TO'];
+const catNomes=()=>{const r=C('cat').filter(c=>c.ativo!==false).map(c=>c.dados.nome);return r.length?r:['Compra de mercadorias','Embalagens','Fretes e logística','Marketing e anúncios','Tarifas de marketplace','Aluguel','Água, luz e internet','Pró-labore','Salários e encargos','Impostos e taxas','Serviços de terceiros','Contabilidade','Sistemas e softwares','Tarifas bancárias','Empréstimos e juros','Outras despesas']};
+const ccNomes=()=>C('cc').filter(c=>c.ativo!==false).map(c=>c.dados.nome);
+const FORMAS=['Boleto','PIX','Transferência','Cartão de crédito','Débito automático','Dinheiro'];
+const generico=tipo=>({lista:()=>C(tipo),get:id=>C(tipo).find(c=>c.id===id),salvar:(id,d,ativo=true)=>{let c=(db.cadastros||[]).find(x=>x.id===id);if(!c){c={id:id||`${tipo}-${uid()}`,tipo,dados:{},ativo:true};db.cadastros.push(c)}c.dados={...c.dados,...d};c.ativo=ativo;return c.id},excluir:id=>{db.cadastros=db.cadastros.filter(c=>c.id!==id)}});
+const CADS={
+ fornecedores:{ic:'users',titulo:'Fornecedores',um:'fornecedor',sub:'Cadastro de fornecedores com dados fiscais, bancários e condições padrão de pagamento.',store:generico('forn'),nome:d=>d.fantasia||d.razao,
+  secoes:[['Identificação',[['doc','CNPJ / CPF',{req:1,ph:'Digite o CNPJ ou CPF — os dados são buscados na Receita'}],['tipoPessoa','Pessoa',{op:['Jurídica','Física']}],['ie','Inscrição estadual'],['desde','Fornecedor desde',{t:'date'}],['razao','Razão social / nome',{req:1,span:2}],['fantasia','Nome fantasia',{span:2}]]],
+   ['Endereço e contato',[['cep','CEP'],['endereco','Endereço',{span:2}],['numero','Número'],['complemento','Complemento'],['bairro','Bairro'],['cidade','Cidade'],['uf','UF',{op:UF}],['contato','Contato'],['email','E-mail',{t:'email'}],['telefone','Telefone'],['telefone2','Telefone 2']]],
+   ['Dados da Receita Federal',[['situacao','Situação cadastral'],['regime','Regime tributário'],['porte','Porte'],['abertura','Data de abertura',{t:'date'}],['natureza','Natureza jurídica',{span:2}],['capital','Capital social (R$)',{t:'money'}],['suframa','SUFRAMA'],['atividade','Atividade principal (CNAE)',{span:4}],['secundarias','Atividades secundárias',{t:'textarea',span:4}],['socios','Quadro societário',{t:'textarea',span:4}],['receitaEm','Consultado na Receita em',{t:'date'}]]],
+   ['Condições financeiras',[['categoria','Categoria padrão',{op:()=>['',...catNomes()]}],['centro','Centro de custo padrão',{op:()=>['',...ccNomes()]}],['forma','Forma de pagamento',{op:['',...FORMAS]}],['prazo','Prazo padrão (dias)',{t:'number'}]]],
+   ['Dados bancários',[['banco','Banco'],['agencia','Agência'],['conta','Conta'],['pix','Chave PIX',{span:2}]]],
+   ['Observações',[['obs','Observações',{t:'textarea',span:4}]]]],
+  colunas:[['Fornecedor',d=>`<strong>${esc(d.fantasia||d.razao)}</strong>${d.fantasia&&d.razao!==d.fantasia?`<br><small class="caption">${esc(d.razao)}</small>`:''}`],['CNPJ / CPF',d=>esc(d.doc||'—')],['Cidade / UF',d=>esc([d.cidade,d.uf].filter(Boolean).join(' / ')||'—')],['Categoria padrão',d=>esc(d.categoria||'—')],['Em aberto',(d,c)=>{const v=abertoForn(d);return `<span class="num">${v?money(v):'—'}</span>`}]],
+  resumo:resumoForn},
+ categorias:{ic:'layers',titulo:'Plano financeiro',um:'categoria',genero:'f',sub:'Categorias de receitas e despesas usadas nos lançamentos, na conciliação e nos relatórios.',store:generico('cat'),nome:d=>d.nome,
+  secoes:[['Categoria',[['codigo','Código'],['nome','Nome',{req:1,span:2}],['tipo','Tipo',{op:['Despesa','Receita','Transferência']}],['grupo','Grupo',{op:['Custo das mercadorias','Despesas comerciais','Despesas administrativas','Pessoal','Impostos','Financeiro','Investimentos','Receitas operacionais','Outras receitas','Outras despesas']}],['dre','Linha da DRE gerencial',{span:3}]]]],
+  colunas:[['Código',d=>`<span class="mono">${esc(d.codigo||'')}</span>`],['Categoria',d=>`<strong>${esc(d.nome)}</strong>`],['Tipo',d=>`<span class="badge ${d.tipo==='Receita'?'ok':d.tipo==='Transferência'?'info':''}">${esc(d.tipo||'Despesa')}</span>`],['Grupo',d=>esc(d.grupo||'—')],['Usada em',d=>{const n=P().filter(t=>t.categoria===d.nome).length;return n?`${n} título(s)`:'—'}]],
+  ordem:(a,b)=>String(a.dados.codigo||'').localeCompare(String(b.dados.codigo||''),undefined,{numeric:true}),vazio:'<button class="primary" data-erp-plano="1">Criar plano financeiro padrão</button>'},
+ centros:{ic:'layers',titulo:'Centros de custo',um:'centro de custo',sub:'Onde cada despesa é alocada (canal, área, projeto).',store:generico('cc'),nome:d=>d.nome,
+  secoes:[['Centro de custo',[['codigo','Código'],['nome','Nome',{req:1,span:2}],['responsavel','Responsável'],['obs','Descrição',{t:'textarea',span:4}]]]],
+  colunas:[['Código',d=>`<span class="mono">${esc(d.codigo||'')}</span>`],['Centro de custo',d=>`<strong>${esc(d.nome)}</strong>`],['Responsável',d=>esc(d.responsavel||'—')],['Títulos',d=>{const l=P().filter(t=>t.centroCusto===d.nome);return l.length?`${l.length} · ${money(round(l.reduce((a,t)=>a+t.valor,0)))}`:'—'}]],
+  vazio:'<button class="primary" data-erp-cc="1">Criar centros padrão</button>'},
+ cadcontas:{ic:'bank',titulo:'Contas bancárias',um:'conta',genero:'f',sub:'Contas correntes, aplicações, carteiras dos marketplaces e caixa.',nome:d=>d.nome,
+  store:{lista:()=>(db.bankAccounts||[]).map(a=>({id:a.id,dados:a,ativo:a.ativo!==false})),get:id=>{const a=(db.bankAccounts||[]).find(x=>x.id===id);return a&&{id,dados:a,ativo:a.ativo!==false}},
+   salvar:(id,d,ativo=true)=>{db.bankAccounts=db.bankAccounts||[];let a=db.bankAccounts.find(x=>x.id===id);if(!a){a={id:uid()};db.bankAccounts.push(a)}Object.assign(a,d,{saldoInicial:round(Number(d.saldoInicial)||0),dataSaldoInicial:d.dataSaldoInicial||null,ativo});return a.id},excluir:id=>{if((db.bankTx||[]).some(t=>t.contaId===id))return toast('A conta tem movimentos importados: inative em vez de excluir.'),false;db.bankAccounts=db.bankAccounts.filter(a=>a.id!==id)}},
+  secoes:[['Conta',[['nome','Nome',{req:1,span:2}],['tipo','Tipo',{op:[['corrente','Conta corrente'],['aplicacao','Aplicação'],['carteira','Carteira de marketplace'],['caixa','Caixa']]}],['banco','Banco (código)'],['agencia','Agência'],['conta','Conta']]],['Saldo inicial',[['saldoInicial','Saldo inicial (R$)',{t:'money'}],['dataSaldoInicial','No fim do dia',{t:'date'}]]]],
+  colunas:[['Conta',d=>`<strong>${esc(d.nome)}</strong>`],['Tipo',d=>esc({corrente:'Conta corrente',aplicacao:'Aplicação',carteira:'Carteira de marketplace',caixa:'Caixa'}[d.tipo]||d.tipo)],['Banco / agência / conta',d=>esc([d.banco,d.agencia,d.conta].filter(Boolean).join(' · ')||'—')],['Saldo atual',(d)=>{const s=window.Tesouraria?.saldos().contas.find(x=>x.id===d.id);return `<span class="num">${money(s?.saldo||0)}</span>`}]]},
+ cadprodutos:{ic:'box',titulo:'Custos e embalagens',um:'produto',sub:'SKU, custo e embalagem — a base do lucro por pedido e da formação de preço.',nome:d=>d.nome||d.id,
+  store:{lista:()=>(db.products||[]).map(p=>({id:p.id,dados:p,ativo:true})),get:id=>{const p=(db.products||[]).find(x=>x.id===id);return p&&{id,dados:p,ativo:true}},
+   salvar:(id,d)=>{db.products=db.products||[];const sku=String(d.id||id||'').trim();if(!sku)return toast('Informe o SKU.'),null;let p=db.products.find(x=>x.id===(id||sku));if(!p){if(db.products.some(x=>x.id===sku))return toast('Já existe um produto com este SKU.'),null;p={id:sku,precos:{},extra:{}};db.products.push(p)}Object.assign(p,{nome:d.nome||'',categoria:d.categoria||'',custo:round(Number(d.custo)||0),embalagem:round(Number(d.embalagem)||0),peso:d.peso===''?null:Number(d.peso)});return p.id},excluir:id=>{db.products=db.products.filter(p=>p.id!==id)}},
+  secoes:[['Produto',[['id','SKU',{req:1,fixo:1}],['nome','Descrição',{span:3}],['categoria','Categoria'],['peso','Peso (kg)',{t:'number'}]]],['Custos',[['custo','Custo unitário (R$)',{t:'money'}],['embalagem','Embalagem (R$)',{t:'money'}]]]],
+  colunas:[['SKU',d=>`<span class="mono">${esc(d.id)}</span>`],['Descrição',d=>`<strong>${esc(d.nome||'—')}</strong>`],['Categoria',d=>esc(d.categoria||'—')],['Custo',d=>`<span class="num">${money(d.custo||0)}</span>`],['Embalagem',d=>`<span class="num">${money(d.embalagem||0)}</span>`]]}};
+const novoDe=def=>(def.genero==='f'?'Nova ':'Novo ')+def.um;
+const cadState={};const cadUI=pg=>cadState[pg]||(cadState[pg]={modo:'lista',id:null,busca:'',inativos:false});
+const nomeNorm=s=>normalized(s).replace(/\b(ltda|me|epp|eireli|s\/?a|sa)\b/g,'').replace(/[^a-z0-9]/g,'');
+function acharForn(d){const k=nomeNorm(d.razao),f=nomeNorm(d.fantasia||''),doc=String(d.doc||'').replace(/\D/g,'');return p=>{const pd=String(p.fornecedorDoc||'').replace(/\D/g,'');return (doc&&pd&&doc===pd)||(k&&nomeNorm(p.fornecedor)===k)||(f&&nomeNorm(p.fornecedor)===f)}}
+function abertoForn(d){const m=acharForn(d);return round(abertos().filter(m).reduce((a,t)=>a+saldoT(t),0))}
+function resumoForn(d){const m=acharForn(d),ts=P().filter(m),ns=(db.purchases||[]).filter(n=>m({fornecedor:n.fornecedor,fornecedorDoc:n.fornecedorDoc})&&n.tipo==='compra');
+ return `<div class="grid kpis4 small"><div class="card"><small>Compras (notas)</small><strong>${money(round(ns.reduce((a,n)=>a+n.valor,0)))}</strong><small>${ns.length} nota(s)</small></div><div class="card"><small>Em aberto</small><strong class="gold">${money(abertoForn(d))}</strong><small>${ts.filter(t=>!['pago','cancelado'].includes(t.status)).length} título(s)</small></div><div class="card"><small>Pago</small><strong class="green">${money(round(ts.reduce((a,t)=>a+(t.valorPago||0),0)))}</strong><small>histórico</small></div><div class="card"><small>Última compra</small><strong>${ns.length?dataBR(ns.map(n=>n.emissao).sort().at(-1)):'—'}</strong><small>&nbsp;</small></div></div>
+ ${ts.length?`<div class="tablebox" style="margin-top:14px"><div class="tabletop"><h2>Títulos deste fornecedor</h2></div><div class="tablewrap" style="max-height:320px"><table><thead><tr><th>Vencimento</th><th>Documento</th><th class="num">Valor</th><th>Situação</th></tr></thead><tbody>${ts.sort((a,b)=>b.vencimento.localeCompare(a.vencimento)).slice(0,60).map(t=>`<tr class="clk" data-pg-edit="${esc(t.id)}"><td>${dataBR(t.vencimento)}</td><td>${esc(t.descricao||t.documento||'')}${t.parcelas>1?` · ${t.parcela}/${t.parcelas}`:''}</td><td class="num">${money(t.valor)}</td><td>${window.Financeiro?.situacao?.(t)||t.status}</td></tr>`).join('')}</tbody></table></div></div>`:''}`}
+function campoHTML([k,l,o={}],d){const v=d[k]??'',id='cf_'+k,span=o.span?` style="grid-column:span ${o.span}"`:'';const req=o.req?' <span class="red">*</span>':'';
+ const ops=typeof o.op==='function'?o.op():o.op;
+ if(ops)return `<div class="field"${span}><label for="${id}">${l}${req}</label><select id="${id}" data-cf="${k}">${ops.map(x=>{const [val,lab]=Array.isArray(x)?x:[x,x||'—'];return `<option value="${esc(val)}" ${String(v)===String(val)?'selected':''}>${esc(lab)}</option>`}).join('')}</select></div>`;
+ if(o.t==='textarea')return `<div class="field"${span}><label for="${id}">${l}</label><textarea id="${id}" data-cf="${k}">${esc(v)}</textarea></div>`;
+ return `<div class="field"${span}><label for="${id}">${l}${req}</label><input id="${id}" data-cf="${k}" type="${o.t==='money'?'text':o.t||'text'}" ${o.t==='money'?'inputmode="decimal"':''} value="${esc(o.t==='money'?String(v===''?'':Number(v).toFixed(2)).replace('.',','):v)}" ${o.fixo&&v?'readonly':''} ${o.ph?`placeholder="${esc(o.ph)}"`:''}></div>`}
+function lerCampos(def){const d={};for(const [,itens] of def.secoes)for(const [k,,o={}] of itens){const el=$(`[data-cf="${k}"]`);if(!el)continue;d[k]=o.t==='money'?round(TableImport.num(el.value)):o.t==='number'?(el.value===''?'':Number(el.value)):el.value.trim()}return d}
+function cadView(pg){const def=CADS[pg],u=cadUI(pg);
+ if(u.modo==='ficha'){const c=u.id?def.store.get(u.id):null,d=c?.dados||{};const novo=!c;
+  return `<div class="toolbar"><button class="primary" data-cad-salvar="${pg}">${ico('check',16)} Salvar</button><button data-cad-salvarnovo="${pg}">Salvar e novo</button>${pg==='fornecedores'?`<button data-cnpj-buscar="1">${ico('search',16)} Buscar pelo CNPJ</button>`:''}${!novo?`<button data-cad-ativo="${pg}">${c.ativo===false?'Reativar':'Inativar'}</button><button class="quiet dangerbtn" data-cad-excluir="${pg}">${ico('trash',16)} Excluir</button>`:''}<span style="flex:1"></span><button class="quiet" data-cad-lista="${pg}">${ico('arrow',16)} Voltar à lista</button></div>
+  <div class="formhead"><div class="formicon">${ico(def.ic,26)}</div><div><div class="crumb">${novo?novoDe(def):(def.genero==='f'?'Ficha da ':'Ficha do ')+def.um}${c?.ativo===false?' · <span class="red">'+(def.genero==='f'?'inativa':'inativo')+'</span>':''}</div><h2>${esc(novo?novoDe(def):def.nome(d)||'')}</h2></div></div>
+  <div class="formcard">${def.secoes.map(([t,itens])=>`<fieldset><legend>${t}</legend><div class="formgrid">${itens.map(f=>campoHTML(f,d)).join('')}</div></fieldset>`).join('')}</div>
+  ${!novo&&def.resumo?`<div style="margin-top:22px">${def.resumo(d)}</div>`:''}`}
+ const q=normalized(u.busca);let l=def.store.lista().filter(c=>u.inativos||c.ativo!==false).filter(c=>!q||normalized(Object.values(c.dados).filter(v=>typeof v!=='object').join(' ')).includes(q));if(def.ordem)l.sort(def.ordem);else l.sort((a,b)=>String(def.nome(a.dados)).localeCompare(String(def.nome(b.dados))));
+ const sugest=pg==='fornecedores'?fornSemCadastro():[];
+ return `<div class="toolbar"><button class="primary" data-cad-novo="${pg}">${ico('plus',16)} ${novoDe(def)}</button><button data-cad-exportar="${pg}">${ico('download',16)} Exportar</button><button data-erp-print="1">${ico('print',16)} Imprimir</button>${pg==='fornecedores'?`<button data-cnpj-lote="1">${ico('refresh',16)} Completar pela Receita</button>`:''}${pg==='cadprodutos'?`<button data-g="import-precos" title="CSV ou Excel: SKU, produto, custo, embalagem, categoria e preços por canal (o modelo da Academia serve)">${ico('upload',16)} Importar planilha</button>`:''}<span style="flex:1"></span><label class="check-l"><input type="checkbox" class="check" data-cad-inativos="${pg}" ${u.inativos?'checked':''}> Mostrar inativos</label><div class="searchin">${ico('search',16)}<input type="search" id="cadBusca" data-cad-busca="${pg}" placeholder="Pesquisar ${def.titulo.toLowerCase()}…" value="${esc(u.busca)}"></div></div>
+ ${sugest.length?`<div class="notice"><strong>${sugest.length} fornecedor(es) das notas e títulos ainda sem cadastro.</strong> Crie as fichas com razão social e CNPJ já preenchidos. <button class="small primary" data-erp-importforn="1" style="margin-left:8px">Cadastrar todos</button></div>`:''}
+ <div class="tablebox"><div class="tablewrap"><table class="gridtable"><thead><tr>${def.colunas.map(([t])=>`<th>${t}</th>`).join('')}<th style="width:60px"></th></tr></thead><tbody>${l.map(c=>`<tr class="clk ${c.ativo===false?'inativo':''}" data-cad-ficha="${pg}:${esc(c.id)}">${def.colunas.map(([,f])=>`<td>${f(c.dados,c)}</td>`).join('')}<td class="num">${ico('chev',16)}</td></tr>`).join('')||`<tr><td colspan="${def.colunas.length+1}" class="empty">Nenhum registro. ${def.vazio||''}</td></tr>`}</tbody></table></div><div class="tablefoot">${l.length} registro(s)</div></div>`}
+function fornSemCadastro(){const cad=C('forn').map(c=>acharForn(c.dados));const vistos=new Map();for(const x of [...(db.purchases||[]).filter(n=>n.tipo==='compra').map(n=>({fornecedor:n.fornecedor,fornecedorDoc:n.fornecedorDoc})),...P().filter(t=>t.origem!=='extrato').map(t=>({fornecedor:t.fornecedor,fornecedorDoc:t.fornecedorDoc}))]){if(!x.fornecedor||cad.some(m=>m(x)))continue;const k=nomeNorm(x.fornecedor);if(!vistos.has(k)||(!vistos.get(k).fornecedorDoc&&x.fornecedorDoc))vistos.set(k,x)}return [...vistos.values()]}
+for(const [pg,def] of Object.entries(CADS))addPage(pg,def.ic,def.titulo,()=>cadView(pg),def.sub,'',()=>{const b=$('#cadBusca');if(b)b.oninput=e=>{cadUI(pg).busca=e.target.value;const pos=e.target.selectionStart;render();const n=$('#cadBusca');n.focus();n.setSelectionRange(pos,pos)}});
+function salvarCad(pg,depois){const def=CADS[pg],u=cadUI(pg),d=lerCampos(def);
+ if(pg==='fornecedores'){const v=docValido(d.doc);if(!v)return toast('CNPJ / CPF inválido: confira os dígitos.');d.doc=v.fmt;d.tipoPessoa=v.tipo==='cpf'?'Física':'Jurídica';const dup=C('forn').find(c=>c.id!==u.id&&String(c.dados.doc||'').replace(/\D/g,'')===v.num);if(dup)return toast(`Já existe um fornecedor com este documento: ${dup.dados.fantasia||dup.dados.razao}.`)}for(const [,itens] of def.secoes)for(const [k,l,o={}] of itens)if(o.req&&!String(d[k]??'').trim())return toast(`Preencha: ${l}.`);
+ const atual=u.id?def.store.get(u.id):null;const id=def.store.salvar(u.id,d,atual?atual.ativo!==false:true);if(!id)return;audit(`${def.titulo}: ${u.id?'ficha alterada':'cadastro incluído'}`,def.nome({...d})||id);
+ if(depois==='novo'){u.id=null;u.modo='ficha'}else{u.id=id;u.modo='ficha'}render();toast('Cadastro salvo.')}
+document.addEventListener('click',e=>{const b=e.target.closest('[data-cad-novo],[data-cad-salvar],[data-cad-salvarnovo],[data-cad-lista],[data-cad-ficha],[data-cad-excluir],[data-cad-ativo],[data-cad-exportar],[data-erp-plano],[data-erp-cc],[data-erp-importforn],[data-erp-print]');if(!b)return;const d=b.dataset;
+ if(d.erpPrint){window.print();return}
+ if(d.cadNovo){const u=cadUI(d.cadNovo);u.modo='ficha';u.id=null;render();return}
+ if(d.cadLista){cadUI(d.cadLista).modo='lista';render();return}
+ if(d.cadFicha){const [pg,id]=d.cadFicha.split(/:(.*)/s);const u=cadUI(pg);u.modo='ficha';u.id=id;render();window.scrollTo(0,0);return}
+ if(d.cadSalvar){salvarCad(d.cadSalvar);return}
+ if(d.cadSalvarnovo){salvarCad(d.cadSalvarnovo,'novo');return}
+ if(d.cadAtivo){const pg=d.cadAtivo,def=CADS[pg],u=cadUI(pg),c=def.store.get(u.id);def.store.salvar(u.id,{...c.dados},c.ativo===false);audit(`${def.titulo}: ${c.ativo===false?'reativado':'inativado'}`,def.nome(c.dados));render();return}
+ if(d.cadExcluir){const pg=d.cadExcluir,def=CADS[pg],u=cadUI(pg),c=def.store.get(u.id);if(!confirm(`Excluir ${def.um} "${def.nome(c.dados)}"? Os lançamentos já feitos não mudam.`))return;if(def.store.excluir(u.id)===false)return;audit(`${def.titulo}: cadastro excluído`,def.nome(c.dados));u.modo='lista';u.id=null;render();return}
+ if(d.cadExportar){const pg=d.cadExportar,def=CADS[pg];const campos=def.secoes.flatMap(([,it])=>it.map(f=>f[0]));download(`Jarvis_${pg}.csv`,csv([campos,...def.store.lista().map(c=>campos.map(k=>c.dados[k]??''))]));return}
+ if(d.erpPlano){const PLANO=[['1.01','Venda de mercadorias','Receita','Receitas operacionais'],['1.02','Rendimentos de aplicações','Receita','Outras receitas'],['1.03','Outras receitas','Receita','Outras receitas'],['2.01','Compra de mercadorias','Despesa','Custo das mercadorias'],['2.02','Embalagens','Despesa','Custo das mercadorias'],['2.03','Fretes e logística','Despesa','Despesas comerciais'],['2.04','Tarifas de marketplace','Despesa','Despesas comerciais'],['2.05','Marketing e anúncios','Despesa','Despesas comerciais'],['3.01','Pró-labore','Despesa','Pessoal'],['3.02','Salários e encargos','Despesa','Pessoal'],['4.01','Aluguel','Despesa','Despesas administrativas'],['4.02','Água, luz e internet','Despesa','Despesas administrativas'],['4.03','Contabilidade','Despesa','Despesas administrativas'],['4.04','Sistemas e softwares','Despesa','Despesas administrativas'],['4.05','Serviços de terceiros','Despesa','Despesas administrativas'],['5.01','Impostos e taxas','Despesa','Impostos'],['6.01','Tarifas bancárias','Despesa','Financeiro'],['6.02','Empréstimos e juros','Despesa','Financeiro'],['7.01','Transferência entre contas','Transferência','Financeiro'],['9.99','Outras despesas','Despesa','Outras despesas']];
+  for(const [codigo,nome,tipo,grupo] of PLANO)generico('cat').salvar(null,{codigo,nome,tipo,grupo});audit('Plano financeiro padrão criado',`${PLANO.length} categorias`);render();return}
+ if(d.erpCc){for(const [codigo,nome] of [['01','Mercado Livre'],['02','Shopee'],['03','Magalu'],['04','Loja própria'],['10','Administrativo'],['20','Logística']])generico('cc').salvar(null,{codigo,nome});audit('Centros de custo padrão criados','6 centros');render();return}
+ if(d.erpImportforn){const l=fornSemCadastro();for(const x of l)generico('forn').salvar(null,{razao:x.fornecedor,doc:x.fornecedorDoc||'',tipoPessoa:String(x.fornecedorDoc||'').replace(/\D/g,'').length===11?'Física':'Jurídica',categoria:'Compra de mercadorias'});audit('Fornecedores cadastrados a partir das notas e títulos',`${l.length} fichas`);render();toast(`${l.length} fornecedor(es) cadastrado(s).`)}
+});
+document.addEventListener('change',e=>{const i=e.target.closest('[data-cad-inativos]');if(i){cadUI(i.dataset.cadInativos).inativos=i.checked;render()}});
+
+// ═════════════════ Lançamento de título a pagar ═════════════════
+const lan={};function lanReset(){Object.assign(lan,{fornecedor:'',doc:'',tipoDoc:'Boleto',numero:'',emissao:hoje(),competencia:month,categoria:'',centro:'',conta:'',forma:'',valor:'',parcelas:1,intervalo:30,primeiro:addDias(hoje(),30),recorrente:false,obs:'',grade:null})}lanReset();
+function gradeParcelas(){const n=Math.max(1,Math.min(120,parseInt(lan.parcelas)||1)),v=round(TableImport.num(String(lan.valor||0)));if(lan.grade&&lan.grade.length===n)return lan.grade;
+ const base=lan.recorrente?v:round(v/n),resto=lan.recorrente?0:round(v-base*n);lan.grade=[...Array(n)].map((_,i)=>({venc:lan.intervalo==30?addMeses(lan.primeiro,i):addDias(lan.primeiro,i*(parseInt(lan.intervalo)||30)),valor:round(base+(i===n-1?resto:0))}));return lan.grade}
+function lancamentoView(){const forns=[...new Set([...C('forn').map(c=>c.dados.fantasia||c.dados.razao),...P().map(t=>t.fornecedor).filter(Boolean)])].sort();const grade=lan.valor?gradeParcelas():[];const tot=round(grade.reduce((a,g)=>a+g.valor,0));
+ const sel=(k,ops,ph='—')=>`<select data-lan="${k}"><option value="">${ph}</option>${ops.map(o=>`<option ${lan[k]===o?'selected':''}>${esc(o)}</option>`).join('')}</select>`;
+ return `<div class="toolbar"><button class="primary" data-lan-salvar="1">${ico('check',16)} Salvar lançamento</button><button data-lan-salvar="novo">Salvar e novo</button><button class="quiet" data-lan-limpar="1">Limpar</button><span style="flex:1"></span><button class="quiet" data-nav="pagar">${ico('wallet',16)} Contas a pagar</button></div>
+ <div class="formhead"><div class="formicon">${ico('wallet',26)}</div><div><div class="crumb">Contas a pagar · novo lançamento</div><h2>Lançamento de título a pagar</h2></div></div>
+ ${window.ContaIA?.card()||''}
+ <div class="lancgrid"><div class="formcard">
+  <fieldset><legend>Fornecedor e documento</legend><div class="formgrid">
+   <div class="field" style="grid-column:span 2"><label for="lanForn">Fornecedor <span class="red">*</span></label><input id="lanForn" data-lan="fornecedor" list="lanForns" value="${esc(lan.fornecedor)}" placeholder="Digite ou escolha um fornecedor cadastrado"><datalist id="lanForns">${forns.map(f=>`<option value="${esc(f)}">`).join('')}</datalist></div>
+   <div class="field"><label>CNPJ / CPF</label><input data-lan="doc" value="${esc(lan.doc)}"></div>
+   <div class="field"><label>Tipo de documento</label>${sel('tipoDoc',['Boleto','Nota fiscal','Nota de serviço','Recibo','Contrato','Fatura','Guia de imposto'],'—')}</div>
+   <div class="field" style="grid-column:span 4"><label>Linha digitável ou código de barras do boleto</label><input data-lan="linha" value="${esc(lan.linha||'')}" placeholder="Cole aqui: o valor e o vencimento se preenchem sozinhos" inputmode="numeric"></div>
+   <div class="field"><label>Número do documento</label><input data-lan="numero" value="${esc(lan.numero)}"></div>
+   <div class="field"><label>Emissão</label><input type="date" data-lan="emissao" value="${lan.emissao}"></div>
+   <div class="field"><label>Competência</label><input type="month" data-lan="competencia" value="${lan.competencia}"></div></div></fieldset>
+  <fieldset><legend>Classificação</legend><div class="formgrid">
+   <div class="field" style="grid-column:span 2"><label>Categoria <span class="red">*</span></label>${sel('categoria',catNomes(),'Escolha a categoria')}</div>
+   <div class="field"><label>Centro de custo</label>${sel('centro',ccNomes(),ccNomes().length?'—':'Cadastre em Cadastros')}</div>
+   <div class="field"><label>Forma de pagamento</label>${sel('forma',FORMAS)}</div>
+   <div class="field" style="grid-column:span 2"><label>Conta prevista para pagamento</label>${sel('conta',(db.bankAccounts||[]).map(a=>a.nome),'—')}</div></div></fieldset>
+  <fieldset><legend>Valores e vencimentos</legend><div class="formgrid">
+   <div class="field"><label>Valor ${lan.recorrente?'de cada mês':'total'} <span class="red">*</span></label><input data-lan="valor" inputmode="decimal" value="${esc(lan.valor)}" placeholder="0,00"></div>
+   <div class="field"><label>${lan.recorrente?'Meses':'Parcelas'}</label><input type="number" min="1" max="120" data-lan="parcelas" value="${lan.parcelas}"></div>
+   <div class="field"><label>1º vencimento</label><input type="date" data-lan="primeiro" value="${lan.primeiro}"></div>
+   <div class="field"><label>Intervalo</label><select data-lan="intervalo">${[[30,'Mensal'],[15,'Quinzenal'],[7,'Semanal'],[28,'A cada 28 dias']].map(([v,l])=>`<option value="${v}" ${Number(lan.intervalo)===v?'selected':''}>${l}</option>`).join('')}</select></div>
+   <div class="field" style="grid-column:span 4"><label class="check-l"><input type="checkbox" class="check" data-lan="recorrente" ${lan.recorrente?'checked':''}> Despesa recorrente (repete o mesmo valor, ex.: aluguel, sistemas)</label></div></div></fieldset>
+  <fieldset><legend>Observações</legend><textarea data-lan="obs" style="width:100%;min-height:70px">${esc(lan.obs)}</textarea></fieldset></div>
+ <aside class="formcard parcelas"><h3>Parcelas</h3>${grade.length?`<table><thead><tr><th>#</th><th>Vencimento</th><th class="num">Valor</th></tr></thead><tbody>${grade.map((g,i)=>`<tr><td>${i+1}</td><td><input type="date" data-lan-venc="${i}" value="${g.venc}"></td><td><input data-lan-val="${i}" inputmode="decimal" value="${String(g.valor.toFixed(2)).replace('.',',')}" class="num"></td></tr>`).join('')}</tbody><tfoot><tr><td colspan="2"><strong>Total</strong></td><td class="num"><strong>${money(tot)}</strong></td></tr></tfoot></table>`:'<p class="caption">Informe o valor para gerar as parcelas. Datas e valores podem ser ajustados um a um.</p>'}</aside></div>`}
+addPage('lancamento','plus','Novo lançamento',lancamentoView,'Títulos a pagar sem nota de entrada: boletos, contratos, impostos, serviços — parcelados ou recorrentes.','',()=>{
+ $$('[data-lan]').forEach(el=>{const k=el.dataset.lan;el.onchange=()=>{lan[k]=el.type==='checkbox'?el.checked:el.value;
+  if(k==='linha'){const b=window.Pagamentos?.lerBoleto(el.value);if(b){if(b.valor)lan.valor=String(b.valor.toFixed(2)).replace('.',',');if(b.vencimento)lan.primeiro=b.vencimento;lan.forma='Boleto';lan.tipoDoc=b.tipo==='arrecadacao'?(b.segmento==='Órgão público'||b.segmento==='Prefeitura'?'Guia de imposto':'Fatura'):'Boleto';lan.grade=null;if(!/Linha digitável/.test(lan.obs||''))lan.obs=[lan.obs,`Linha digitável: ${b.codigo}`].filter(Boolean).join('\n');toast(`${b.banco||b.segmento||'Boleto'}${b.valor?' · '+money(b.valor):''}${b.vencimento?' · vence '+new Date(b.vencimento+'T12:00:00').toLocaleDateString('pt-BR'):''}`)}else if(el.value.trim())toast('Código inválido: confira os números.')}if(['valor','parcelas','intervalo','primeiro','recorrente'].includes(k))lan.grade=null;
+  if(k==='fornecedor'){const c=C('forn').find(c=>[c.dados.fantasia,c.dados.razao].includes(lan.fornecedor));if(c){lan.doc=c.dados.doc||lan.doc;lan.categoria=lan.categoria||c.dados.categoria||'';lan.centro=lan.centro||c.dados.centro||'';lan.forma=lan.forma||c.dados.forma||'';if(c.dados.prazo){lan.primeiro=addDias(lan.emissao||hoje(),Number(c.dados.prazo));lan.grade=null}}}render()}});
+ $$('[data-lan-venc]').forEach(el=>el.onchange=()=>{lan.grade[+el.dataset.lanVenc].venc=el.value;render()});$$('[data-lan-val]').forEach(el=>el.onchange=()=>{lan.grade[+el.dataset.lanVal].valor=round(TableImport.num(el.value));render()})});
+document.addEventListener('click',e=>{const b=e.target.closest('[data-lan-salvar],[data-lan-limpar]');if(!b)return;if(b.dataset.lanLimpar){lanReset();window.ContaIA?.limpar();render();return}
+ if(!lan.fornecedor.trim())return toast('Informe o fornecedor.');if(!lan.categoria)return toast('Escolha a categoria.');const grade=gradeParcelas();if(!lan.valor||!grade.length||grade.some(g=>!(g.valor>0)||!g.venc))return toast('Confira valor e vencimentos.');
+ const grupo=uid(),n=grade.length;db.payables=db.payables||[];
+ // Um boleto paga uma parcela só: a linha digitável fica na parcela de mesmo valor e vencimento (ou na 1ª); as outras ficam sem código.
+ const cod=(lan.linha||'').replace(/\D/g,'')||(String(lan.obs||'').match(/(?:Linha digitável|PIX copia e cola):\s*(.+)/)?.[1]||'').trim(),bol=cod&&window.Pagamentos?.lerBoleto?.(cod);
+ const iLinha=n>1&&bol?Math.max(0,grade.findIndex(g=>(!bol.valor||Math.abs(g.valor-bol.valor)<0.01)&&(!bol.vencimento||g.venc===bol.vencimento))):0,obsSem=String(lan.obs||'').replace(/^(?:Linha digitável|PIX copia e cola):.*$/gm,'').replace(/\n{2,}/g,'\n').trim();
+ grade.forEach((g,i)=>db.payables.push((window.Pagamentos?.marcar||(x=>x))({id:`MAN-${grupo}-${i+1}`,linhaDigitavel:i===iLinha&&(lan.linha||'').replace(/\D/g,'')||undefined,origem:lan.recorrente?'recorrente':'manual',fornecedor:lan.fornecedor.trim(),fornecedorDoc:lan.doc,descricao:`${lan.tipoDoc}${lan.numero?' '+lan.numero:''} · ${lan.fornecedor.trim()}`,documento:lan.numero,parcela:i+1,parcelas:n,emissao:lan.emissao,vencimento:g.venc,valor:g.valor,juros:0,desconto:0,valorPago:0,status:'aberto',categoria:lan.categoria,centroCusto:lan.centro,conta:lan.conta,observacao:[lan.forma?`Forma: ${lan.forma}`:'',lan.competencia?`Competência: ${lan.competencia}`:'',i===iLinha?lan.obs:obsSem].filter(Boolean).join(' · '),createdBy:window.Cloud?.session?.user?.email||'local'})));
+ audit('Título a pagar lançado',`${lan.fornecedor} · ${n}× · total ${money(round(grade.reduce((a,g)=>a+g.valor,0)))} · 1º venc. ${dataBR(grade[0].venc)}`);toast(`${n} título(s) lançado(s).`);
+ window.ContaIA?.limpar();if(b.dataset.lanSalvar==='novo'){lanReset();render()}else{lanReset();navigate('pagar')}});
+
+// ═════════════════ Relatórios financeiros ═════════════════
+const rel={id:'aberto',de:month+'-01',ate:new Date(new Date(month+'-15T12:00:00').getFullYear(),new Date(month+'-15T12:00:00').getMonth()+1,0).toLocaleDateString('sv-SE'),conta:'',regime:'caixa'};
+const RELS=[['aberto','Títulos em aberto por vencimento','Aging: vencidos e a vencer por faixa, com o detalhe de cada título.'],['pagos','Pagamentos realizados','Títulos pagos no período, por data de pagamento e conta.'],['categorias','Despesas por categoria','Matriz categoria × mês (caixa: data do pagamento; competência: vencimento).'],['fornecedores','Compras por fornecedor','Ranking de compras pelas notas de entrada no período.'],['extrato','Extrato de conta','Movimentos da conta bancária com saldo dia a dia.'],['fluxo','Fluxo de caixa realizado','Entradas e saídas dos extratos agrupadas por natureza, mês a mês.']];
+function relTabela(cab,linhas,rodape){return `<div class="tablewrap"><table class="reltable"><thead><tr>${cab.map(c=>`<th class="${c.startsWith('#')?'num':''}">${c.replace(/^#/,'')}</th>`).join('')}</tr></thead><tbody>${linhas.map(l=>`<tr>${l.map((v,i)=>`<td class="${cab[i].startsWith('#')?'num':''}">${v}</td>`).join('')}</tr>`).join('')||`<tr><td colspan="${cab.length}" class="empty">Sem dados no período.</td></tr>`}</tbody>${rodape?`<tfoot><tr>${rodape.map((v,i)=>`<td class="${cab[i].startsWith('#')?'num':''}"><strong>${v}</strong></td>`).join('')}</tr></tfoot>`:''}</table></div>`}
+function relDados(){const h=hoje(),de=rel.de,ate=rel.ate,fx=v=>money(v);
+ if(rel.id==='aberto'){const faixas=[['Vencidos há mais de 60 dias',t=>t.vencimento<addDias(h,-60)],['Vencidos 31 a 60 dias',t=>t.vencimento>=addDias(h,-60)&&t.vencimento<addDias(h,-30)],['Vencidos 1 a 30 dias',t=>t.vencimento>=addDias(h,-30)&&t.vencimento<h],['Vencem hoje',t=>t.vencimento===h],['A vencer 1 a 7 dias',t=>t.vencimento>h&&t.vencimento<=addDias(h,7)],['A vencer 8 a 30 dias',t=>t.vencimento>addDias(h,7)&&t.vencimento<=addDias(h,30)],['A vencer após 30 dias',t=>t.vencimento>addDias(h,30)]];const ab=abertos(),tot=round(ab.reduce((a,t)=>a+saldoT(t),0));
+  const resumo=faixas.map(([l,f])=>{const x=ab.filter(f),v=round(x.reduce((a,t)=>a+saldoT(t),0));return [l,x.length,fx(v),tot?pct(v/tot*100):'—']});
+  return {csv:[['vencimento','fornecedor','documento','categoria','saldo'],...ab.sort((a,b)=>a.vencimento.localeCompare(b.vencimento)).map(t=>[t.vencimento,t.fornecedor,t.descricao,t.categoria,saldoT(t)])],html:relTabela(['Faixa','#Títulos','#Saldo','#%'],resumo,['Total',ab.length,fx(tot),'100%'])+`<h3 class="relsub">Detalhe</h3>`+relTabela(['Vencimento','Fornecedor','Documento','Categoria','#Saldo'],ab.sort((a,b)=>a.vencimento.localeCompare(b.vencimento)).map(t=>[`<span class="${t.vencimento<h?'red':''}">${dataBR(t.vencimento)}</span>`,esc(t.fornecedor||''),esc(t.descricao||'')+(t.parcelas>1?` · ${t.parcela}/${t.parcelas}`:''),esc(t.categoria||''),fx(saldoT(t))]),['','','','',fx(tot)])}}
+ if(rel.id==='pagos'){const l=P().filter(t=>t.pagoEm&&t.pagoEm>=de&&t.pagoEm<=ate&&(!rel.conta||t.conta===rel.conta||(db.bankAccounts||[]).find(a=>a.id===t.conta)?.nome===rel.conta)).sort((a,b)=>a.pagoEm.localeCompare(b.pagoEm)),tot=round(l.reduce((a,t)=>a+(t.valorPago||0),0));
+  return {csv:[['pago_em','fornecedor','documento','categoria','conta','valor','juros','desconto','pago'],...l.map(t=>[t.pagoEm,t.fornecedor,t.descricao,t.categoria,t.conta,t.valor,t.juros,t.desconto,t.valorPago])],html:relTabela(['Pagamento','Fornecedor','Documento','Categoria','Conta','#Valor','#Juros/desc.','#Pago'],l.map(t=>[dataBR(t.pagoEm),esc(t.fornecedor||''),esc(t.descricao||''),esc(t.categoria||''),esc(t.conta||''),fx(t.valor),fx((t.juros||0)-(t.desconto||0)),fx(t.valorPago||0)]),['','','','','','','',fx(tot)])}}
+ if(rel.id==='categorias'){const campo=rel.regime==='caixa'?'pagoEm':'vencimento';const l=P().filter(t=>t.status!=='cancelado'&&t[campo]&&t[campo]>=de&&t[campo]<=ate);const meses=[...new Set(l.map(t=>t[campo].slice(0,7)))].sort();const cats=[...new Set(l.map(t=>t.categoria||'Sem categoria'))].sort();const val=t=>rel.regime==='caixa'?(t.valorPago||0):t.valor;
+  const linhas=cats.map(c=>{const vs=meses.map(m=>round(l.filter(t=>(t.categoria||'Sem categoria')===c&&t[campo].startsWith(m)).reduce((a,t)=>a+val(t),0)));return [esc(c),...vs.map(fx),fx(round(vs.reduce((a,v)=>a+v,0)))]});const totM=meses.map(m=>round(l.filter(t=>t[campo].startsWith(m)).reduce((a,t)=>a+val(t),0)));
+  return {csv:[['categoria',...meses,'total'],...cats.map(c=>[c,...meses.map(m=>round(l.filter(t=>(t.categoria||'Sem categoria')===c&&t[campo].startsWith(m)).reduce((a,t)=>a+val(t),0))),''])],html:relTabela(['Categoria',...meses.map(m=>'#'+new Date(m+'-15T12:00:00').toLocaleDateString('pt-BR',{month:'short',year:'2-digit'})),'#Total'],linhas,['Total',...totM.map(fx),fx(round(totM.reduce((a,v)=>a+v,0)))])}}
+ if(rel.id==='fornecedores'){const ns=(db.purchases||[]).filter(n=>n.tipo==='compra'&&n.emissao>=de&&n.emissao<=ate),g=new Map();for(const n of ns){const k=n.fornecedor||'—',x=g.get(k)||{f:k,doc:n.fornecedorDoc,n:0,v:0};x.n++;x.v=round(x.v+n.valor);g.set(k,x)}const l=[...g.values()].sort((a,b)=>b.v-a.v),tot=round(l.reduce((a,x)=>a+x.v,0));
+  return {csv:[['fornecedor','cnpj','notas','valor'],...l.map(x=>[x.f,x.doc,x.n,x.v])],html:relTabela(['Fornecedor','CNPJ','#Notas','#Valor','#Participação'],l.map(x=>[`<strong>${esc(x.f)}</strong>`,esc(x.doc||''),x.n,fx(x.v),tot?pct(x.v/tot*100):'—']),['Total','',ns.length,fx(tot),'100%'])}}
+ if(rel.id==='extrato'){const a=(db.bankAccounts||[]).find(x=>x.id===rel.conta)||(db.bankAccounts||[])[0];if(!a)return {csv:[],html:'<div class="empty">Cadastre uma conta bancária e importe o extrato.</div>'};const ini=a.dataSaldoInicial||'0000-00-00';let s=a.saldoInicial||0;const movs=(db.bankTx||[]).filter(t=>t.contaId===a.id).sort((x,y)=>x.data.localeCompare(y.data));const ant=round(s+movs.filter(t=>t.data>ini&&t.data<de).reduce((x,t)=>x+t.valor,0));s=ant;
+  const l=movs.filter(t=>t.data>=de&&t.data<=ate).map(t=>{if(t.data>ini)s=round(s+t.valor);return [dataBR(t.data),esc(t.descricao),esc(t.vinculo?.desc||(t.status==='pendente'?'a conciliar':'')),`<span class="${t.valor<0?'red':'green'}">${fx(t.valor)}</span>`,fx(s)]});
+  return {csv:[['data','descricao','conciliacao','valor'],...movs.filter(t=>t.data>=de&&t.data<=ate).map(t=>[t.data,t.descricao,t.vinculo?.desc||'',t.valor])],html:`<p class="caption">${esc(a.nome)} · saldo anterior em ${dataBR(addDias(de,-1))}: <strong>${fx(ant)}</strong></p>`+relTabela(['Data','Descrição','Conciliação','#Valor','#Saldo'],l,['','Saldo final','','',fx(s)])}}
+ if(rel.id==='fluxo'){const movs=(db.bankTx||[]).filter(t=>t.data>=de&&t.data<=ate&&(!rel.conta||t.contaId===rel.conta));const nat=t=>t.vinculo?.tipo==='payable'?((db.payables||[]).find(p=>p.id===t.vinculo.id)?.categoria||'Pagamentos de títulos'):t.vinculo?.categoria||t.vinculo?.desc||(t.status==='pendente'?(t.valor>0?'Entradas a conciliar':'Saídas a conciliar'):'Outros');
+  const meses=[...new Set(movs.map(t=>t.data.slice(0,7)))].sort();const bloco=(sinal,titulo)=>{const l=movs.filter(t=>sinal>0?t.valor>0:t.valor<0);const ks=[...new Set(l.map(nat))].sort();return [[`<strong>${titulo}</strong>`,...meses.map(m=>`<strong>${fx(round(l.filter(t=>t.data.startsWith(m)).reduce((a,t)=>a+t.valor,0)))}</strong>`)],...ks.map(k=>[`&nbsp;&nbsp;${esc(k)}`,...meses.map(m=>fx(round(l.filter(t=>nat(t)===k&&t.data.startsWith(m)).reduce((a,t)=>a+t.valor,0))))])]};
+  const res=meses.map(m=>round(movs.filter(t=>t.data.startsWith(m)).reduce((a,t)=>a+t.valor,0)));
+  return {csv:[['mes','natureza','valor'],...movs.map(t=>[t.data.slice(0,7),nat(t),t.valor])],html:relTabela(['Natureza',...meses.map(m=>'#'+new Date(m+'-15T12:00:00').toLocaleDateString('pt-BR',{month:'short',year:'2-digit'}))],[...bloco(1,'Entradas'),...bloco(-1,'Saídas')],['Resultado de caixa',...res.map(fx)])}}
+ return {csv:[],html:''}}
+function relView(){const r=RELS.find(x=>x[0]===rel.id),d=relDados(),contas=db.bankAccounts||[];const precisaConta=['extrato','fluxo','pagos'].includes(rel.id),precisaPeriodo=rel.id!=='aberto';
+ return `<div class="relgrid"><nav class="card rellist" aria-label="Relatórios"><div class="navlabel" style="margin:0 0 8px">Financeiro</div>${RELS.map(([id,t])=>`<button class="${rel.id===id?'active':''}" data-rel="${id}">${ico('file',16)}<span>${t}</span></button>`).join('')}<div class="navlabel" style="margin:16px 0 8px">Outros</div><button data-nav="reports">${ico('file',16)}<span>Conciliação e vendas</span></button><button data-nav="contabil">${ico('book',16)}<span>DRE do escritório</span></button><div class="navlabel" style="margin:16px 0 8px">ERP</div>${[['contabauto','ledger','Balancete, DRE, balanço e diário'],['fluxo','cash','Fluxo de caixa realizado e projetado'],['estoque','box','Posição de estoque e ABC'],['estcompras','cart','Sugestão de compras'],['devolucoes','undo','Devoluções por produto e canal'],['faturamento','receipt','Pedidos sem nota fiscal'],['pending','alert','Pendências do ERP'],['auditoria','shield','Log e auditoria']].map(([p,ic,t])=>`<button data-nav="${p}">${ico(ic,16)}<span>${t}</span></button>`).join('')}</nav>
+ <section class="relout"><div class="relhead"><div><h2>${r[1]}</h2><p class="caption">${r[2]}</p></div><div class="row"><button data-rel-csv="1">${ico('download',16)} Exportar</button><button data-erp-print="1">${ico('print',16)} Imprimir</button></div></div>
+ <div class="relparams">${precisaPeriodo?`<div class="field"><label>De</label><input type="date" data-relp="de" value="${rel.de}"></div><div class="field"><label>Até</label><input type="date" data-relp="ate" value="${rel.ate}"></div>`:`<p class="caption">Posição em ${dataBR(hoje())}.</p>`}${precisaConta?`<div class="field"><label>Conta</label><select data-relp="conta">${rel.id!=='extrato'?'<option value="">Todas</option>':''}${contas.map(a=>`<option value="${esc(rel.id==='pagos'?a.nome:a.id)}" ${rel.conta===(rel.id==='pagos'?a.nome:a.id)?'selected':''}>${esc(a.nome)}</option>`).join('')}</select></div>`:''}${rel.id==='categorias'?`<div class="field"><label>Regime</label><select data-relp="regime"><option value="caixa" ${rel.regime==='caixa'?'selected':''}>Caixa (pagamento)</option><option value="competencia" ${rel.regime==='competencia'?'selected':''}>Competência (vencimento)</option></select></div>`:''}</div>
+ <div class="printhead"><strong>${esc(window.Cloud?.wsName||'Jarvis')}</strong> · ${r[1]}${precisaPeriodo?` · ${dataBR(rel.de)} a ${dataBR(rel.ate)}`:''} · emitido em ${new Date().toLocaleString('pt-BR')}</div>
+ <div class="card relbody">${d.html}</div></section></div>`}
+addPage('relfin','print','Relatórios financeiros',relView,'Relatórios com filtros, totais, exportação para Excel e impressão.','',()=>{$$('[data-relp]').forEach(el=>el.onchange=()=>{rel[el.dataset.relp]=el.value;render()})});
+document.addEventListener('click',e=>{const b=e.target.closest('[data-rel],[data-rel-csv]');if(!b)return;if(b.dataset.rel){rel.id=b.dataset.rel;rel.conta='';render();return}const d=relDados();download(`Jarvis_relatorio_${rel.id}.csv`,csv(d.csv))});
+
+/* A tela "central" (Hoje) é registrada por hoje.js. */
+// Abre na Central do dia quando não há tela no endereço.
+if(!location.hash&&page==='dashboard')page='resumo';
+window.ERP={lan,catNomes,fornNomes:()=>[...new Set([...C('forn').map(c=>c.dados.fantasia||c.dados.razao),...P().map(t=>t.fornecedor).filter(Boolean)])].filter(Boolean).sort(),busca,projecao,cadUI,avisos,contagens,graficoCaixa,bindGrafico,MODS,saudacao,nomeUsuario,abertos,saldoT,modDe,resultados};
+})();
+
+// ── CNPJá: busca na ficha e complemento em lote (a consulta roda no servidor, com a chave guardada lá) ──
+(()=>{const consulta=async doc=>{const r=await Integrations.callFn('integrations',{action:'cnpj',cnpj:doc});if(r.desde){r.abertura=r.desde;delete r.desde}return r};
+ document.addEventListener('click',async e=>{const b=e.target.closest('[data-cnpj-buscar],[data-cnpj-lote]');if(!b)return;
+  if(!window.Cloud?.ws)return toast('A consulta de CNPJ funciona no modo nuvem.');
+  if(b.dataset.cnpjBuscar){const doc=($('[data-cf="doc"]')?.value||'').replace(/\D/g,'');if(doc.length!==14)return toast('Digite o CNPJ (14 dígitos) no campo CNPJ / CPF.');b.disabled=true;toast('Consultando a Receita…');
+   try{const r=await consulta(doc);let n=0;for(const [k,v] of Object.entries(r)){const el=$(`[data-cf="${k}"]`);if(!el||v==null||v==='')continue;if(k==='fantasia'&&!v)continue;el.value=k==='capital'?String(Number(v).toFixed(2)).replace('.',','):v;n++}
+    toast(`${r.razao} · ${r.situacao||''} · ${n} campos preenchidos. Confira e clique em Salvar.`)}catch(err){toast(err.message)}finally{b.disabled=false}return}
+  const alvo=(db.cadastros||[]).filter(c=>c.tipo==='forn'&&String(c.dados.doc||'').replace(/\D/g,'').length===14&&!c.dados.receitaEm);if(!alvo.length)return toast('Todos os fornecedores com CNPJ já foram consultados.');
+  if(!confirm(`Consultar ${alvo.length} fornecedor(es) na Receita pelo CNPJá? Cada consulta usa créditos do seu plano.`))return;b.disabled=true;let ok=0,erro=0;
+  for(const c of alvo){try{toast(`Consultando ${ok+erro+1} de ${alvo.length}: ${c.dados.razao}`);const r=await consulta(c.dados.doc);const novo={...c.dados};for(const [k,v] of Object.entries(r))if(v!==''&&v!=null&&(k==='receitaEm'||!novo[k]||['situacao','regime','porte','natureza','capital','atividade','secundarias','socios','suframa','abertura','ie'].includes(k)))novo[k]=v;c.dados=novo;ok++}catch(err){erro++;console.warn(c.dados.razao,err.message)}}
+  audit('Fornecedores completados pela Receita (CNPJá)',`${ok} atualizado(s)${erro?` · ${erro} com erro`:''}`);b.disabled=false;render();toast(`${ok} fornecedor(es) atualizado(s) pela Receita.${erro?` ${erro} com erro.`:''}`)})})();
+
+// ── CNPJ/CPF: máscara, validação e busca automática na Receita ao terminar de digitar ──
+function docValido(doc){const n=String(doc||'').replace(/\D/g,'');const dv=(b,p)=>{const s=b.split('').reduce((a,c,i)=>a+Number(c)*p[i],0)%11;return s<2?0:11-s};
+ if(n.length===11&&!/^(\d)\1+$/.test(n)){const p1=[10,9,8,7,6,5,4,3,2],p2=[11,...p1];if(dv(n.slice(0,9),p1)==n[9]&&dv(n.slice(0,10),p2)==n[10])return {tipo:'cpf',num:n,fmt:n.replace(/^(\d{3})(\d{3})(\d{3})(\d{2})$/,'$1.$2.$3-$4')}}
+ if(n.length===14&&!/^(\d)\1+$/.test(n)){const p1=[5,4,3,2,9,8,7,6,5,4,3,2],p2=[6,...p1];if(dv(n.slice(0,12),p1)==n[12]&&dv(n.slice(0,13),p2)==n[13])return {tipo:'cnpj',num:n,fmt:n.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/,'$1.$2.$3/$4-$5')}}
+ return null}
+let ultimoDoc='';
+document.addEventListener('input',e=>{const el=e.target.closest('[data-cf="doc"]');if(!el||page!=='fornecedores')return;const n=el.value.replace(/\D/g,'').slice(0,14);
+ el.value=n.length<=11?n.replace(/^(\d{3})(\d)/,'$1.$2').replace(/^(\d{3}\.\d{3})(\d)/,'$1.$2').replace(/^(\d{3}\.\d{3}\.\d{3})(\d)/,'$1-$2'):n.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{0,2})/,'$1.$2.$3/$4-$5');
+ el.classList.remove('invalid');if(n.length===14||n.length===11)setTimeout(()=>el.dispatchEvent(new Event('change',{bubbles:true})),0)});
+document.addEventListener('change',async e=>{const el=e.target.closest('[data-cf="doc"]');if(!el||page!=='fornecedores')return;const v=docValido(el.value);const n=el.value.replace(/\D/g,'');
+ if(!n)return;if(!v){el.classList.add('invalid');return toast(n.length===11||n.length===14?'Documento inválido: confira os dígitos.':'Digite o CNPJ (14 dígitos) ou o CPF (11 dígitos).')}
+ el.value=v.fmt;const tp=$('[data-cf="tipoPessoa"]');if(tp)tp.value=v.tipo==='cpf'?'Física':'Jurídica';
+ const u=ERP.cadUI('fornecedores'),dup=(db.cadastros||[]).filter(c=>c.tipo==='forn').find(c=>c.id!==u.id&&String(c.dados.doc||'').replace(/\D/g,'')===v.num);if(dup){el.classList.add('invalid');return toast(`Já cadastrado: ${dup.dados.fantasia||dup.dados.razao}. Abra a ficha existente em vez de criar outra.`)}
+ if(v.tipo==='cpf'){toast('CPF válido. Preencha o nome da pessoa física (a Receita não disponibiliza consulta aberta por CPF).');$('[data-cf="razao"]')?.focus();return}
+ if(ultimoDoc===v.num)return;ultimoDoc=v.num;const btn=$('[data-cnpj-buscar]');if(btn)btn.click()});
+
+// Alterar o próprio nome (fica no cadastro do usuário, vale em qualquer computador).
+document.addEventListener('click',async e=>{const b=e.target.closest('[data-erp-nome]');if(!b)return;const atual=window.Cloud?.session?.user?.user_metadata?.nome||'';$('#erpdrop').innerHTML='';
+ modal('Seu nome',`<label for="meuNome">Nome completo</label><input id="meuNome" value="${esc(atual)}" style="width:100%" placeholder="Ex.: Maria da Silva"><div class="modalfoot"><button data-action="close">Cancelar</button><button class="primary" id="meuNomeOk">Salvar</button></div>`);
+ $('#meuNomeOk').onclick=async()=>{const nome=$('#meuNome').value.trim();if(!nome)return toast('Informe o nome.');const {data,error}=await Cloud.client.auth.updateUser({data:{nome}});if(error)return toast(error.message);Cloud.session.user=data.user;closeModal();render();toast('Nome atualizado.')}});
+// ═════════════════ Versão nova publicada: todo mundo recebe sozinho ═════════════════
+// A cada 5 minutos (e ao voltar para a aba) o Jarvis confere a versão publicada. Se mudou, mostra o aviso com o botão
+// para atualizar na hora. Sozinho, só recarrega quando a pessoa volta para a aba depois de 10 minutos fora: nunca no
+// meio de um clique (antes recarregava na troca de tela, e a recarga parecia uma volta para o login). A recarga pede a
+// página sem cache e não se repete para a mesma versão, para não entrar em laço se o servidor ainda entregar a antiga.
+(()=>{const atual=(document.querySelector('script[src*="erp.js?v="]')?.getAttribute('src')||'').split('v=')[1]||'';if(!atual||typeof fetch!=='function'||location.protocol==='file:')return;
+ try{const u=new URL(location.href);if(u.searchParams.has('atualizado')){u.searchParams.delete('atualizado');history.replaceState(null,'',u.pathname+u.search+u.hash)}}catch{}
+ let nova=null,avisado=false,saiuEm=0;
+ const jaTentou=v=>{try{return sessionStorage.getItem('jarvis_recarregou_para')===v}catch{return false}};
+ const recarregar=()=>{if(!nova||jaTentou(nova))return;try{sessionStorage.setItem('jarvis_recarregou_para',nova);sessionStorage.setItem('jarvis_manter_tela','1')}catch{}
+  Promise.resolve(window.Cloud?.flush?.()).catch(()=>{}).finally(()=>{const u=new URL(location.href);u.searchParams.set('atualizado',nova);location.replace(u.href)})};
+ const conferir=async()=>{if(nova)return;try{const r=await fetch(location.pathname+'?versao='+Date.now(),{cache:'no-store'});const t=await r.text(),v=(t.match(/erp\.js\?v=([0-9A-Za-z_-]+)/)||[])[1];if(v&&v!==atual&&!jaTentou(v)){nova=v;avisar()}}catch{}};
+ const avisar=()=>{if(avisado)return;avisado=true;const d=document.createElement('div');d.className='novaversao';d.setAttribute('role','status');d.innerHTML='<span><b>Nova versão do Jarvis</b> com melhorias e telas novas.</span><button class="small primary" type="button">Atualizar agora</button>';d.querySelector('button').onclick=recarregar;document.body.appendChild(d)};
+ setInterval(conferir,5*60*1000);
+ document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='hidden'){saiuEm=Date.now();return}
+  if(nova&&saiuEm&&Date.now()-saiuEm>10*60*1000&&!document.querySelector('.modalback'))recarregar();else conferir()});
+ setTimeout(conferir,20000)})();
