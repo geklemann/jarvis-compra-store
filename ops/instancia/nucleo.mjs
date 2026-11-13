@@ -33,6 +33,13 @@ export const SITE_GK = `https://${DOMINIO_GK}`;
 export const SIMPLES_PERMITIDOS = Object.freeze(['simples/motor/rep_p.js', 'simples/modulos/pessoas/telas/assinar_p7s.js']);
 /** Pastas inteiras do E-Commerce. */
 export const PASTAS = Object.freeze(['app', 'vendor', 'brand']);
+/**
+ * A pasta de telas EXCLUSIVAS da instância (docs/INSTANCIAS.md): só existe no repositório das telas do cliente, nunca no
+ * jarvis. O build inclui os arquivos daqui (com as mesmas travas: carimbo de endereço e ofuscação) e injeta os
+ * <script>/<link> no app/index.html — a empresa cria telas próprias sem editar o index.html (compartilhado). Fica fora de
+ * app/, então a devolução (que só traz app/ → web/) nunca a leva para o jarvis, e a atualização a preserva (exportar-repo.mjs).
+ */
+export const EXCLUSIVAS = 'exclusivas';
 /** Arquivos da raiz que são do site institucional da GK (gerados por site/gerar.mjs) ou da hospedagem dela. */
 export const FORA_DA_RAIZ = Object.freeze(['index.html', 'privacidade.html', 'termos.html', 'sitemap.xml', 'CNAME', '.nojekyll', 'robots.txt']);
 const TIPOS_RAIZ = /\.(js|css|html|webmanifest)$/;
@@ -66,12 +73,22 @@ export function idsDasInstancias(raiz) {
   try { return [JSON.parse(fs.readFileSync(loc.arquivo(), 'utf8')).id]; } catch { return []; }
 }
 
+/**
+ * Só do site da GK, nunca das instâncias: o atalho da equipe (web/atalho-equipe.js) pergunta por uma função que só o banco
+ * da GK tem (20261124110000_atalho_equipe.sql, "fora" da trilha). O build da instância tira o <script> dele (o app/index.html
+ * do repositório das telas vai igual ao da fonte, como com os demo-*.js).
+ */
+export const SO_DA_GK = Object.freeze(['atalho-equipe.js']);
+/** O index.html sem os <script> do que é só do site da GK (SO_DA_GK). */
+export const semSoDaGk = (html) => SO_DA_GK.reduce((h, f) => h.replace(new RegExp(`<script src="${f.replace(/[.]/g, '\\.')}\\?v=\\d+"><\\/script>`, 'g'), ''), html);
+
 /** Os arquivos do E-Commerce na fonte (relativos, com "/"). `demo`: leva a Loja Modelo (demo-*.js e loja-modelo/). */
 export function arquivosDoApp(fonte, { demo = false } = {}) {
   const out = [];
   for (const d of fs.readdirSync(fonte, { withFileTypes: true })) {
     if (!d.isFile() || !TIPOS_RAIZ.test(d.name) || FORA_DA_RAIZ.includes(d.name)) continue;
     if (!demo && /^demo-/.test(d.name)) continue;
+    if (SO_DA_GK.includes(d.name)) continue;
     out.push(d.name);
   }
   for (const p of [...PASTAS, ...(demo ? ['loja-modelo'] : [])]) andar(fonte, p, out);
@@ -150,6 +167,7 @@ export function transformarIndex(html, inst, { rascunho = false, versao }) {
   h = h.replace(/<meta name="twitter:card" content="[^"]*">/, url ? '<meta name="twitter:card" content="summary">' : '');
   h = h.replace(/<title>[^<]*<\/title>/, `<title>${rascunho ? 'RASCUNHO · ' : ''}Jarvis · ${esc(inst.nome)}</title>`);
   if (!inst.demo) h = h.replace(/<script src="demo-[a-z-]+\.js\?v=\d+"><\/script>/g, '');
+  h = semSoDaGk(h);
   h = h.replace(/\?v=\d+"/g, `?v=${versao}"`);
   if (rascunho) h = h.replace('<div id="app"></div>', `<div id="app"></div><div id="instancia-rascunho" role="note" style="position:fixed;left:50%;bottom:10px;transform:translateX(-50%);z-index:2147483647;pointer-events:none;background:#b42318;color:#fff;font:600 12px/1.3 system-ui,sans-serif;padding:6px 12px;border-radius:999px;box-shadow:0 2px 8px rgb(0 0 0 / 35%);max-width:calc(100% - 120px);text-align:center">RASCUNHO · prévia da instância ${esc(inst.nome)}, sem base de dados</div>`);
   return h;
@@ -243,6 +261,38 @@ export function escreverManifesto(saida) {
 }
 
 /**
+ * Telas EXCLUSIVAS da instância (EXCLUSIVAS/, docs/INSTANCIAS.md): leva os arquivos da pasta `exclusivas/` da fonte para o
+ * build (mesmo carimbo e ofuscação dos demais) e injeta os <script>/<link> no app/index.html (css antes de </head>, js
+ * antes do registro do service worker, para rodar depois do app). Precisa rodar ANTES do manifesto (trava 4), para o
+ * index.html carimbado bater com o publicado. Devolve os caminhos achados (vazio quando não há a pasta — o normal no jarvis).
+ */
+export function montarExclusivas({ raiz, saida, versao, hostsInst, marca, esbuild, ofuscador, textos }) {
+  const rels = andar(raiz, EXCLUSIVAS, []).filter((r) => !r.endsWith('.md'));
+  for (const rel of rels) {
+    const de = path.join(raiz, rel), para = path.join(saida, rel);
+    fs.mkdirSync(path.dirname(para), { recursive: true });
+    if (!deveCompactar(rel)) { fs.copyFileSync(de, para); continue; }
+    const texto = carimbar(rel, fs.readFileSync(de, 'utf8'), { hosts: hostsInst, marca });
+    textos?.set(rel, compactar(esbuild, path.basename(rel), texto, {}));
+    fs.writeFileSync(para, compactar(esbuild, path.basename(rel), texto, { ofuscador, marca, caminho: rel }));
+  }
+  const idx = path.join(saida, 'app', 'index.html');
+  const css = rels.filter((r) => r.endsWith('.css')).sort();
+  const jsf = rels.filter((r) => r.endsWith('.js')).sort();
+  if ((css.length || jsf.length) && fs.existsSync(idx)) {
+    let h = fs.readFileSync(idx, 'utf8');
+    const links = css.map((r) => `<link rel="stylesheet" href="${r}?v=${versao}">`).join('');
+    const scripts = jsf.map((r) => `<script src="${r}?v=${versao}"></script>`).join('');
+    if (links) h = h.includes('</head>') ? h.replace('</head>', `${links}</head>`) : links + h;
+    const sw = '<script>if("serviceWorker"';
+    if (scripts) h = h.includes(sw) ? h.replace(sw, `${scripts}${sw}`) : h.replace('</body>', `${scripts}</body>`);
+    fs.writeFileSync(idx, h);
+    textos?.set('app/index.html', h);
+  }
+  return rels;
+}
+
+/**
  * Monta a instância. Devolve { inst, saida, arquivos, compactados, faltando }. Lança erro com a lista de problemas.
  * `saida`: padrão <raiz>/_inst/<id>. `versao`: o carimbo dos ?v= (padrão JARVIS_VERSAO ou a data e hora).
  * `instancia`: a configuração já lida (testes), validada do mesmo jeito; sem ela, lê o arquivo da instância.
@@ -297,6 +347,9 @@ export async function montarInstancia({ raiz, id, rascunho = false, saida, versa
   fs.writeFileSync(path.join(saida, 'robots.txt'), ROBOTS);
   fs.writeFileSync(path.join(saida, '_redirects'), REDIRECTS);
   fs.writeFileSync(path.join(saida, '_headers'), HEADERS);
+  // Telas EXCLUSIVAS da instância (só no repositório das telas do cliente): entram no build e são injetadas no
+  // app/index.html ANTES do manifesto (trava 4), para a empresa ter telas próprias que nunca voltam para o jarvis.
+  montarExclusivas({ raiz, saida, versao, hostsInst, marca, esbuild, ofuscador, textos });
   // Trava 4 (aviso de alteração): manifesto dos hashes dos arquivos críticos PUBLICADOS (já ofuscados). O build legítimo
   // do repositório gera um manifesto novo; o que o app detecta é o arquivo publicado mexido à mão (hash fora do manifesto).
   // A autoria da instância é a variante 'instancia' (só o Jarvis E-Commerce): no jarvis, o build reescreve os módulos de

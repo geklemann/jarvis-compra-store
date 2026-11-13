@@ -33,6 +33,7 @@ npm test              # os mesmos testes da checagem
 | O quê | Onde |
 |---|---|
 | Telas (fontes) | `app/` (o app abre em `/app/`; `app/app/index.html` lista os scripts, na ordem) |
+| Telas exclusivas da empresa | `exclusivas/` (telas só desta instância, nunca no Jarvis compartilhado; veja `exclusivas/LEIAME.md`) |
 | Configuração | `instancia.json` (endereço do Supabase, chave anon e chave pública dos alertas: são públicas) |
 | Montagem | `ops/instancia/montar.mjs` (só o E-Commerce, compactado, com o config da empresa) |
 | Publicação | `.github/workflows/publicar.yml` (Cloudflare Pages, só da `main`) |
