@@ -988,3 +988,9 @@ body.light .imp-mar{--mar-a:#bfe6f7;--mar-b:#8ccbe8;--terra:#e9e2cf;--rota:#0b6f
 @media(max-width:620px){.imp-nav-mapa iframe{height:320px}}
 .imp-vsaldo{display:flex;flex-direction:column;gap:2px;font-size:10.5px;color:var(--muted);white-space:nowrap}
 .imp-pgtab th,.imp-pgtab td{padding-left:6px;padding-right:6px}.imp-pgtab td:first-child .imp-pilha{min-width:0;width:190px}.imp-pgtab .ufin{width:96px}.imp-pgtab input[type=date]{width:138px}.imp-pgtab td:last-child{width:36px}
+/* Menus sem acesso: sempre visíveis, mas em cinza fraco e travados (o clique avisa). */
+.side .menu button.bloqueado,.dropmenu .dropitem.bloqueado{opacity:.45;filter:grayscale(1)}
+.side .menu button.bloqueado:hover,.dropmenu .dropitem.bloqueado:hover{opacity:.62;background:transparent}
+.side .menu button.bloqueado{cursor:not-allowed}
+.navlock{display:inline-flex;align-items:center;margin-left:auto;opacity:.7}
+.navlock svg{width:14px;height:14px}

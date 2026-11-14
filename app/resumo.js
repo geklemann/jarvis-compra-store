@@ -260,7 +260,7 @@ function imagem(){const P=painel(),d=P.d,c=document.createElement('canvas');c.wi
 
 // Modo TV: tela cheia com os painéis girando a cada 12 s (setas trocam, Esc sai).
 let tv=null;
-function modoTV(){const P=painel(),slides=[blocoAbertura(P),blocoVendas(P),`<div class="rzgrid g11">${blocoMapa(P)}${blocoCanais(P)}</div>`,`<div class="rzgrid g11">${blocoMetas(P)}${blocoFila(P)}</div>`,`<div class="rzgrid g11">${blocoCaixa(P)}${blocoFeed(P)}</div>`];
+function modoTV(){const P=painel(),slides=[blocoAbertura(P),`<div class="rzgrid g11">${blocoVendas(P)}${blocoMetas(P)}</div>`,`<div class="rzgrid g11">${blocoMapa(P)}${blocoCanais(P)}</div>`,blocoCascata(P),`<div class="rzgrid g11">${blocoFila(P)}${blocoFeed(P)}</div>`,blocoCaixa(P),blocoVitrine(P)].filter((s)=>s&&!/^\s*<div[^>]*class="rzgrid[^"]*"[^>]*>\s*<\/div>\s*$/.test(s));
  const el=document.createElement('div');el.className='rztv rz';el.setAttribute('role','dialog');el.setAttribute('aria-label','Modo TV');
  el.innerHTML=`<div class="rztv-top"><strong>${esc(window.Marca?.nome?.()||'Jarvis')}</strong><span class="rztv-rel"></span><div class="rztv-dots">${slides.map((_,i)=>`<i data-i="${i}"></i>`).join('')}</div><button class="small" data-rztv="sair">${icon('sair')} Sair</button></div><div class="rztv-s"></div><div id="rzTip" class="rztip" hidden></div>`;
  document.body.appendChild(el);let i=0;const ir=n=>{i=(n+slides.length)%slides.length;el.querySelector('.rztv-s').innerHTML=`<div class="rztv-in">${slides[i]}</div>`;el.querySelectorAll('.rztv-dots i').forEach((d,k)=>d.classList.toggle('on',k===i));animar()};

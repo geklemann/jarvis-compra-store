@@ -190,17 +190,17 @@ function loginView(msg=''){window.Assistant?.sync();
 
 // Conta sem empresa: cria a própria (teste grátis de 7 dias) ou espera o convite de uma empresa que já usa o Jarvis.
 async function aguardandoView(session){let r=null;try{const {data:req}=await sb.from('access_requests').select('status,created_at,decided_at').eq('user_id',session.user.id).order('created_at',{ascending:false}).limit(1);r=req?.[0]||null}catch{}
- const email=esc(session.user.email),antigo=r&&['recusado','pendente'].includes(r.status)?`<p class="caption" style="margin-top:8px">${r.status==='recusado'?'Um pedido de acesso anterior não foi aprovado':'Há um pedido de acesso anterior aguardando'} (${new Date(r.created_at).toLocaleDateString('pt-BR')}).</p>`:'';
+ const email=esc(session.user.email),antigo=r&&['recusado','pendente'].includes(r.status)?`<p class="caption" style="margin-top:8px">${r.status==='recusado'?'Um pedido de acesso anterior não foi aprovado':'Há um pedido de acesso anterior aguardando'} (${new Date(r.created_at).toLocaleDateString('pt-BR')}).</p>`:'',inst=window.CONCILIA_CONFIG?.instancia?.id;
  $('#app').innerHTML=`<div class="auth"><div class="authcard"><div class="authhead"><img class="authlogo" src="brand/jarvis-192.png" alt="Jarvis"><div class="authname">Jarvis</div><div class="authslogan">O ERP do futuro, hoje</div></div>
- <h1 style="font-size:23px">Bem-vindo ao Jarvis</h1><p>Sua conta <strong>${email}</strong> está pronta. Crie a sua empresa e teste grátis por 7 dias: conecte o ERP e os marketplaces só para leitura e veja quanto cada venda realmente deixa.</p>
+ <h1 style="font-size:23px">Bem-vindo ao Jarvis</h1>${inst?`<p>Sua conta <strong>${email}</strong> está pronta, mas ainda <strong>sem acesso</strong>. Peça ao administrador para liberar o seu e-mail em <em>Equipe e acessos</em>; quando liberarem, clique em Verificar.</p>`:`<p>Sua conta <strong>${email}</strong> está pronta. Crie a sua empresa e teste grátis por 7 dias: conecte o ERP e os marketplaces só para leitura e veja quanto cada venda realmente deixa.</p>
  <form id="novaEmp" class="row wrap" style="gap:8px;margin-top:14px"><label for="novaEmpNome" class="sr-only" style="position:absolute;left:-9999px">Nome da empresa</label><input id="novaEmpNome" required minlength="2" maxlength="120" placeholder="Nome da sua empresa" style="flex:1;min-width:200px"><button class="primary" type="submit">Criar minha empresa</button></form>
- <p class="caption red" id="novaEmpErro" role="alert"></p>
- <div class="notice" style="margin-top:22px"><strong>Vou acessar o Jarvis de uma empresa (sou da equipe ou da contabilidade)</strong><br>Não crie empresa. Peça ao administrador dela para te convidar pelo e-mail <strong>${email}</strong> em <em>Equipe e acessos</em>. Com o convite feito, clique em Verificar.
+ <p class="caption red" id="novaEmpErro" role="alert"></p>`}
+ <div class="notice" style="margin-top:22px">${inst?`Peça ao administrador para liberar o seu e-mail <strong>${email}</strong> em <em>Equipe e acessos</em>. Depois de liberarem, clique em Verificar.`:`<strong>Vou acessar o Jarvis de uma empresa (sou da equipe ou da contabilidade)</strong><br>Não crie empresa. Peça ao administrador dela para te convidar pelo e-mail <strong>${email}</strong> em <em>Equipe e acessos</em>. Com o convite feito, clique em Verificar.`}
   <div class="row wrap" style="margin-top:10px"><button id="accCheck">Verificar</button></div>${antigo}</div>
  <div class="row" style="margin-top:16px"><button class="quiet small" id="accOut">Sair</button></div></div></div>`;
  $('#accCheck').onclick=()=>start(session);$('#accOut').onclick=async()=>{await sb.auth.signOut({scope:'local'})};
  // Cadastro da própria empresa: vira dono, começa o teste grátis de 7 dias e abre os primeiros passos.
- $('#novaEmp').onsubmit=async e=>{e.preventDefault();const b=e.target.querySelector('button'),nome=$('#novaEmpNome').value.trim();b.disabled=true;$('#novaEmpErro').textContent='';
+ const nf=$('#novaEmp');if(nf)nf.onsubmit=async e=>{e.preventDefault();const b=e.target.querySelector('button'),nome=$('#novaEmpNome').value.trim();b.disabled=true;$('#novaEmpErro').textContent='';
   try{const {error}=await sb.rpc('criar_empresa',{nome});if(error)throw error;try{sessionStorage.setItem('jarvis_primeiros_passos','1')}catch{}location.hash='#comecar';await start(session)}
   catch(x){$('#novaEmpErro').textContent=x.message||String(x);b.disabled=false}}}
 
