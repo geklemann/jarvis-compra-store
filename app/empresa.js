@@ -38,7 +38,7 @@ function passos(){const con=p=>(st.integ||[]).some(i=>i.provider===p&&i.status==
  return [
   ['marca','Dados da empresa','Nome, logo e assinatura das mensagens aos clientes.','dadosempresa',!!String(db.gerencial?.empresa?.nome_exibicao||'').trim()],
   ['bling','Conectar o Bling','Pedidos, notas e produtos entram sozinhos (só leitura no diagnóstico).','integracoes',con('bling')],
-  ['mkt','Conectar os marketplaces','Mercado Livre, Shopee e Magalu: tarifas, repasses e atendimento de cada venda.','integracoes',con('mercadolivre')||con('shopee')||con('magalu')],
+  ['mkt','Conectar os marketplaces','Mercado Livre, Shopee, Magalu e TikTok Shop: tarifas, repasses e atendimento de cada venda.','integracoes',con('mercadolivre')||con('shopee')||con('magalu')||con('tiktok')],
   ['sync','Primeira sincronização','Os últimos meses de pedidos chegam em alguns minutos depois das conexões.','dashboard',(db.orders||[]).length>0],
   ['custo','Custos dos produtos','Sem o custo, a margem fica estimada. Use Importar planilha em Custos e embalagens ou ajuste item a item.','cadprodutos',custos],
   ['diag','Ver o diagnóstico gratuito','Margem por canal, tarifa cobrada a mais e repasse que não chegou, numa página.','diagnostico',marcado('diag')],
