@@ -26,7 +26,7 @@ const dBR=d=>new Date(d+'T12:00:00').toLocaleDateString('pt-BR',{day:'2-digit',m
 const pct=(a,b)=>b?((a/b-1)*100):null;const fp=v=>v==null?'—':`${v>=0?'+':''}${v.toFixed(1).replace('.',',')}%`;
 const p1=v=>v==null||!isFinite(v)?'—':(v*100).toFixed(1).replace('.',',')+'%';
 const curto=v=>{const a=Math.abs(v),s=v<0?'−':'';return a>=1e6?`${s}R$ ${(a/1e6).toFixed(2).replace('.',',')} mi`:a>=1e4?`${s}R$ ${(a/1e3).toFixed(1).replace('.',',')} mil`:s+money(a)};
-const CORES={'Mercado Livre':'#f5c518','Shopee':'#ee4d2d','Magalu':'#0086ff','Mercado Pago':'#00b1ea','Bling':'#2fbf71'};
+const CORES={'Mercado Livre':'#f5c518','Shopee':'#ee4d2d','Magalu':'#0086ff','TikTok Shop':'#fe2c55','Mercado Pago':'#00b1ea','Bling':'#2fbf71'};
 const eixo=v=>{const a=Math.abs(v);return (v<0?'−':'')+(a>=1e6?(a/1e6).toFixed(1).replace('.',',').replace(',0','')+' mi':a>=1e3?(a/1e3).toFixed(a>=1e4?0:1).replace('.',',').replace(',0','')+' mil':String(Math.round(a)))};
 const cor=c=>CORES[c]||platforms[c]?.color||'#8b93a7';
 const calmo=()=>{try{return matchMedia('(prefers-reduced-motion: reduce)').matches}catch{return false}};

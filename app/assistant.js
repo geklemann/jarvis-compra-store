@@ -4,7 +4,7 @@
 // Vínculos sugeridos pela IA viram propostas que o usuário revisa e confirma — nada financeiro é gravado sozinho.
 // Os nomes e parâmetros das ferramentas precisam coincidir com supabase/functions/ai-assistant/prompt.ts.
 (()=>{
-const MKT=['Mercado Livre','Shopee','Magalu'];
+const MKT=['Mercado Livre','Shopee','Magalu','TikTok Shop'];
 const I=()=>window.Insights;
 const byMonth=m=>db.orders.filter(o=>o.date.startsWith(m));
 const pick=(v,max=200,def=30)=>Math.max(1,Math.min(max,Number(v)||def));

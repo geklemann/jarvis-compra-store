@@ -3,7 +3,7 @@
 // Vendas · Visão geral no formato ERP: números do mês contra o mesmo período do mês anterior, vendas por dia
 // e canal, resultado por canal (bruto, tarifas, líquido, recebido, a receber) e o que pede ação agora.
 (()=>{
-const CORES={'Mercado Livre':'#f5c518','Shopee':'#ee4d2d','Magalu':'#0086ff','Mercado Pago':'#00b1ea'};
+const CORES={'Mercado Livre':'#f5c518','Shopee':'#ee4d2d','Magalu':'#0086ff','TikTok Shop':'#fe2c55','Mercado Pago':'#00b1ea'};
 const cor=p=>CORES[p]||platforms?.[p]?.color||'#8a93a9';
 const dias=m=>{const [y,mm]=m.split('-').map(Number);return new Date(y,mm,0).getDate()};
 const mesAnt=m=>{const d=new Date(m+'-15T12:00:00');d.setMonth(d.getMonth()-1);return d.toISOString().slice(0,7)};

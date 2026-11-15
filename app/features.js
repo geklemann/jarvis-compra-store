@@ -16,7 +16,7 @@ Object.assign(paths,{
  bolt:'M13 2 3 14h9l-1 8 10-12h-9z',
 });
 
-const MKT=['Mercado Livre','Shopee','Magalu'];
+const MKT=['Mercado Livre','Shopee','Magalu','TikTok Shop'];
 const fx={period:'mes',platform:'',search:'',segment:'',stage:'',kind:'',syncRange:'mes'};
 window.Reiniciar?.registrar(fx,['period','platform','search','segment','stage','kind']); // estado de tela: volta ao original ao clicar no menu
 const STAGES=['Novo','Em contato','Negociação','Ativo','Pós-venda','Perdido'];
@@ -102,6 +102,7 @@ const PROVIDERS=[
  {id:'mercadolivre',label:'Mercado Livre',p:'Mercado Livre',brings:'Pedidos, tarifa de venda, frete do vendedor, comprador, UF e liberações do Mercado Pago.'},
  {id:'shopee',label:'Shopee',p:'Shopee',brings:'Pedidos, valor líquido por pedido (escrow), comprador, UF e repasses liberados.'},
  {id:'magalu',label:'Magalu',p:'Magalu',brings:'Pedidos, comissão, frete, cliente e UF. Repasses por importação do extrato.'},
+ {id:'tiktok',label:'TikTok Shop',p:'TikTok Shop',brings:'Pedidos, comprador, UF e itens, e os repasses (settlements) do TikTok já identificados pelo pedido.'},
 ];
 const integ={status:null,rows:{},busy:{},progress:{},members:[],loaded:false};
 async function callFn(name,body){const r=await Cloud.client.functions.invoke(name,{body:{workspace_id:Cloud.ws,...body}});if(r.error){let msg=r.error.message;try{msg=(await r.error.context.json()).error||msg}catch{}throw Error(msg)}return r.data}
@@ -109,7 +110,7 @@ async function loadIntegrations(){if(!window.Cloud?.ws)return;try{const [st,{dat
 window.Integrations={load:loadIntegrations,callFn,state:integ};
 function syncRange(){const t=today();if(fx.syncRange==='30')return [new Date(Date.now()-30*864e5).toLocaleDateString('sv-SE'),t];if(fx.syncRange==='90')return [new Date(Date.now()-90*864e5).toLocaleDateString('sv-SE'),t];const last=new Date(Number(month.slice(0,4)),Number(month.slice(5,7)),0).toLocaleDateString('sv-SE');return [month+'-01',last>t?t:last]}
 function integrationsView(){
- if(!window.Cloud?.enabled&&!window.JARVIS_DEMO)return `<div class="hero"><div><div class="eyebrow">Modo local</div><h2>Conecte a nuvem para integrar as plataformas.</h2><p>As integrações automáticas com Bling, Mercado Livre, Shopee e Magalu e o assistente de IA funcionam com a nuvem do Jarvis ligada. Enquanto isso, os dados ficam neste navegador e entram por importação de relatórios.</p><div class="row"><button class="primary" data-nav="imports">${icon('upload')} Importar relatórios</button></div></div></div><div class="card"><h2>Integrações</h2><p>Recurso não disponível no seu plano — fale com o suporte do Jarvis pela Central de ajuda.</p><div class="row"><button class="small" data-nav="suporte">Central de ajuda</button></div></div>`;
+ if(!window.Cloud?.enabled&&!window.JARVIS_DEMO)return `<div class="hero"><div><div class="eyebrow">Modo local</div><h2>Conecte a nuvem para integrar as plataformas.</h2><p>As integrações automáticas com Bling, Mercado Livre, Shopee, Magalu e TikTok Shop e o assistente de IA funcionam com a nuvem do Jarvis ligada. Enquanto isso, os dados ficam neste navegador e entram por importação de relatórios.</p><div class="row"><button class="primary" data-nav="imports">${icon('upload')} Importar relatórios</button></div></div></div><div class="card"><h2>Integrações</h2><p>Recurso não disponível no seu plano — fale com o suporte do Jarvis pela Central de ajuda.</p><div class="row"><button class="small" data-nav="suporte">Central de ajuda</button></div></div>`;
  if(!integ.loaded){loadIntegrations();return '<div class="empty">Carregando integrações…</div>'}
  const st=integ.status||{},[from,to]=syncRange();
  return `${st.error?`<div class="notice red"><strong>Funções do servidor indisponíveis.</strong> ${esc(st.error)}. Tente de novo em instantes; se continuar, fale com o suporte do Jarvis pela Central de ajuda.</div>`:''}
@@ -236,7 +237,7 @@ document.addEventListener('click',async e=>{const b=e.target.closest('button');i
  if(d.fxBatchConfirm){const sel=$$('[data-batch]').filter(c=>c.checked).map(c=>batch[Number(c.dataset.batch)]);if(!sel.length)return toast('Selecione ao menos um vínculo.');const r=applyLinks(sel,d.fxBatchConfirm);closeModal();toast(`${r.ok} vínculos confirmados${r.skipped.length?` · ${r.skipped.length} ignorados`:''}.`);window.Assistant?.onLinksApplied?.(sel,r);return}
  switch(d.fx){
   case'auto-exact':batchModal(exactPairs(),'Conciliar correspondências exatas','conciliação em lote');break;
-  case'sync-all':for(const id of ['bling','mercadolivre','shopee','magalu']){const row=integ.rows[id];if(row&&(row.status==='conectado'||row.status==='erro'))await runSync(id)}break;
+  case'sync-all':for(const id of ['bling','mercadolivre','shopee','magalu','tiktok']){const row=integ.rows[id];if(row&&(row.status==='conectado'||row.status==='erro'))await runSync(id)}break;
   case'rename-ws':{const name=$('#wsName').value.trim();if(!name)return;try{await Cloud.renameWs(name);toast('Nome salvo.');render()}catch(err){toast(err.message)}break}
   case'add-member':{const email=$('#memberEmail').value.trim();if(!email)return;const {data,error}=await Cloud.client.rpc('add_member',{ws:Cloud.ws,member_email:email});toast(error?error.message:data);loadIntegrations();break}
   case'export-products':exportRows('produtos',[['posicao','produto','sku','unidades','pedidos','receita','participacao_%','canais'],...productRank(periodRows()).sort((a,b)=>b.revenue-a.revenue).map((p,i)=>[i+1,p.title,p.sku,p.qty,p.orders,p.revenue,round(p.share),p.platforms.join(', ')])]);break;
