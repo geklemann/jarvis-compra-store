@@ -51,7 +51,7 @@ const MODS=[
  {id:'res',ic:'chart',t:'Resultado',grupos:[['Análises',['rentabilidade']],['Contabilidade',['contabauto','fechcontab','contabil','planocontas']]]},
  {id:'pre',ic:'tag',t:'Preços',grupos:[['Formação de preço',['formacao','promocao']]]},
  {id:'pes',ic:'wallet',t:'Folha',grupos:[['Painel',['folhapainel']],['Cadastros',['pscolab','psprolabore']],['Folha de pagamento',['folha','psferias','psresc','psesocial']],['Ponto',['ponto']]]},
-{id:'rel',ic:'print',t:'Relatórios',grupos:[['Relatórios',['relfin','reports','diagnostico','alertasrel','cancelados','relshopee']]]}];
+{id:'rel',ic:'print',t:'Relatórios',grupos:[['Relatórios',['relfin','reports','diagnostico','alertasrel','cancelados','relshopee','saldosreceber']]]}];
 // Tela principal de cada módulo: abre ao clicar no nome do módulo no menu e fica no topo da lista dele.
 const VISAO={ini:'resumo',pes:'folhapainel',orc:'orcvisao',atd:'atendimento',ven:'dashboard',est:'estoque',fin:'fluxo',fis:'nfnotas',crm:'crm',cad:'catalogo',imp:'importacoes',res:'contabauto',pre:'formacao',rel:'relfin'};
 window.ERP_MENU={get MODS(){return MODS},get GERAL(){return GERAL},get VISAO(){return VISAO},estrutura:(...a)=>estrutura(...a),primeiraTela:(...a)=>primeiraTela(...a),grupoVisivel:k=>grupoVisivel(k),alternarGrupo:k=>alternarGrupo(k),telaNoMenu:id=>telaNoMenu(id),modNoMenu:m=>modNoMenu(m)};

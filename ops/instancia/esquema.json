@@ -24,6 +24,7 @@
       }
     },
     "workspace_id": { "type": "string", "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", "description": "A empresa (workspace) que vai para a instância." },
+    "produtos": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "enum": ["ecommerce", "erp", "escritorio", "reforma", "normas", "pessoas", "seguranca", "mei"] }, "description": "Os produtos do Jarvis que a empresa contratou (regra do dono, 17/11/2026: cada empresa recebe só o pacote de atualização do que usa). Sem o campo, [\"ecommerce\"]. Hoje só há pacote de instância do E-Commerce." },
     "funcoes": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "type": "string", "pattern": "^[a-z][a-z0-9-]+$" }, "description": "Edge Functions publicadas no projeto da empresa (pastas de supabase/functions)." },
     "demo": { "type": "boolean", "description": "Leva a demonstração (Loja Modelo) no build." },
     "repositorio": { "type": ["string", "null"], "pattern": "^[A-Za-z0-9-]+/[A-Za-z0-9._-]+$", "description": "Repositório privado das telas da empresa (owner/nome)." },

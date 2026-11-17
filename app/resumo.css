@@ -192,8 +192,10 @@ body.light .rzfoto svg{stroke:hsl(var(--h) 55% 42%)}
 .rztv-dots{display:flex;gap:8px;margin-left:auto}
 .rztv-dots i{width:10px;height:10px;border-radius:50%;background:var(--line);cursor:pointer}
 .rztv-dots i.on{background:rgb(var(--ar))}
-.rztv-s{flex:1;display:flex;flex-direction:column;justify-content:center}
-.rztv-in{animation:rzentra .6s both;zoom:1.18}
+.rztv-s{flex:1;display:flex;flex-direction:column;justify-content:center;align-items:center;overflow:hidden}
+.rztv-in{animation:rzfade .5s both;transform-origin:50% 50%;will-change:transform}
+.rztv-col{display:flex;flex-direction:column;gap:18px;width:min(1120px,94vw)}
+@keyframes rzfade{from{opacity:0}to{opacity:1}}
 .rztv .rzacoes{display:none}
 
 /* Faixa da demonstração (demo-loja.js) */

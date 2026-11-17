@@ -33,6 +33,9 @@ export const SITE_GK = `https://${DOMINIO_GK}`;
 export const SIMPLES_PERMITIDOS = Object.freeze(['simples/motor/rep_p.js', 'simples/modulos/pessoas/telas/assinar_p7s.js']);
 /** Pastas inteiras do E-Commerce. */
 export const PASTAS = Object.freeze(['app', 'vendor', 'brand']);
+/** Bibliotecas de web/vendor que só os outros produtos usam e nunca vão para a instância (a Compra Store é só E-Commerce):
+ * a node-forge da assinatura ICP-Brasil do Jarvis ERP. */
+export const VENDOR_FORA = Object.freeze(['vendor/forge.min.js', 'vendor/node-forge-LICENSE.txt']);
 /**
  * A pasta de telas EXCLUSIVAS da instância (docs/INSTANCIAS.md): só existe no repositório das telas do cliente, nunca no
  * jarvis. O build inclui os arquivos daqui (com as mesmas travas: carimbo de endereço e ofuscação) e injeta os
@@ -93,7 +96,7 @@ export function arquivosDoApp(fonte, { demo = false } = {}) {
   }
   for (const p of [...PASTAS, ...(demo ? ['loja-modelo'] : [])]) andar(fonte, p, out);
   for (const f of SIMPLES_PERMITIDOS) if (fs.existsSync(path.join(fonte, f))) out.push(f);
-  return [...new Set(out)].sort();
+  return [...new Set(out)].filter((f) => !VENDOR_FORA.includes(f)).sort();
 }
 
 /** O que uma página referencia (src e href locais), sem a versão "?v=". */
