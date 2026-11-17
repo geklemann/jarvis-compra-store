@@ -58,6 +58,11 @@ export function refDaChave(chave) {
  * das pastas de supabase/functions, quando disponível (no jarvis). Devolve { problemas, faltando } — `faltando` são os
  * campos de publicar que estão null (problema só sem rascunho).
  */
+/** Os produtos que já têm pacote de instância (build, trilha do banco e funções). */
+export const PACOTES_PRONTOS = Object.freeze(['ecommerce']);
+/** Os produtos contratados pela empresa (sem o campo, só o E-Commerce, o primeiro pacote). */
+export const produtosDa = (inst) => (Array.isArray(inst?.produtos) && inst.produtos.length ? inst.produtos : ['ecommerce']);
+
 export function validarInstancia(inst, { rascunho = false, funcoesExistentes = null } = {}) {
   const problemas = validarEsquema(inst);
   if (tipoDe(inst) !== 'object') return { problemas, faltando: [] };
@@ -70,6 +75,8 @@ export function validarInstancia(inst, { rascunho = false, funcoesExistentes = n
   if (ref && inst.project_ref && ref !== inst.project_ref) problemas.push(`anon_key: a chave é do projeto ${ref}, não do ${inst.project_ref}.`);
   if (ref === REF_GK) problemas.push('anon_key: é a chave do projeto da GK.');
   if (inst.dominio && (inst.dominio === DOMINIO_GK || inst.dominio.endsWith(`.${DOMINIO_GK}`))) problemas.push('dominio: é o domínio da GK; a instância usa o domínio da empresa.');
+  // Regra do dono (17/11/2026): cada empresa recebe só o pacote dos produtos que contratou (ops/instancia/pacote.mjs).
+  for (const p of produtosDa(inst)) if (!PACOTES_PRONTOS.includes(p)) problemas.push(`produtos: ainda não há pacote de instância para "${p}" (hoje só ${PACOTES_PRONTOS.join(', ')}).`);
   if (funcoesExistentes && Array.isArray(inst.funcoes)) for (const f of inst.funcoes) if (!funcoesExistentes.includes(f)) problemas.push(`funcoes: "${f}" não existe em supabase/functions.`);
   return { problemas, faltando };
 }

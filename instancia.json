@@ -12,6 +12,9 @@
     "whatsapp": null
   },
   "workspace_id": "6c2f6e77-d8cb-487b-8cf6-077c232f9360",
+  "produtos": [
+    "ecommerce"
+  ],
   "funcoes": [
     "integrations",
     "oauth-callback",

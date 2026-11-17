@@ -198,7 +198,7 @@ function blocoCaixa(P){const D=P.diario;if(!D?.L?.length)return `<section class=
    <line class="hoje" x1="${W(x(iHoje),1)}" x2="${W(x(iHoje),1)}" y1="${Y0}" y2="${Y1}"/><text class="ax" x="${W(x(iHoje),1)}" y="${Y1+16}" text-anchor="middle">hoje</text>
    <circle class="min ${tom}" cx="${W(x(iMin),1)}" cy="${W(y(minF.saldo),1)}" r="6"/><text class="mint" x="${W(Math.min(X1-60,Math.max(X0+60,x(iMin))),1)}" y="${W(Math.min(Y1-6,y(minF.saldo)+22),1)}" text-anchor="middle">menor: ${curto(minF.saldo)}</text>
    <text class="ax" x="${X1}" y="${Y1+16}" text-anchor="end">${dBR(L.at(-1).d)}</text><line class="cross" x1="0" x2="0" y1="${Y0}" y2="${Y1}"/>${alvo}</svg>
-  <div class="rzbts"><button class="small" data-nav="fluxo">Ver fluxo de caixa</button><button class="small" data-nav="pagar">Contas a pagar</button><button class="small" data-nav="reconcile">Repasses a receber</button></div></section>`}
+  <div class="rzbts"><button class="small" data-nav="fluxo">Ver fluxo de caixa</button><button class="small" data-nav="pagar">Contas a pagar</button><button class="small" data-nav="reconcile">Repasses a receber</button><button class="small" data-nav="saldosreceber">Saldos por plataforma</button></div></section>`}
 
 function blocoFila(P){const A=P.acoes;return `<section class="card rzcard rzfila"><div class="rzhead"><div><h3>O que fazer primeiro</h3><p class="caption">Ordenado pelo valor em jogo</p></div><span class="badge ${A.length?'warn':'ok'}">${A.length||'✓'}</span></div>
   ${A.length?`<div class="rzfila-l">${A.slice(0,6).map(a=>`<div class="rzacao ${a.tom}"><span class="rzacao-i">${icon(a.ic)}</span><div><strong>${esc(a.t)}</strong><small>${esc(a.s)}</small></div><em>${a.v?curto(a.v):''}</em>${a.nav?`<button class="small" data-nav="${esc(a.nav)}">${esc(a.b)}</button>`:''}</div>`).join('')}</div>`:'<div class="rzvazio"><p>Nada pendente. Tudo conciliado, pago e com nota. ✓</p></div>'}</section>`}
@@ -260,13 +260,16 @@ function imagem(){const P=painel(),d=P.d,c=document.createElement('canvas');c.wi
 
 // Modo TV: tela cheia com os painéis girando a cada 12 s (setas trocam, Esc sai).
 let tv=null;
-function modoTV(){const P=painel(),slides=[blocoAbertura(P),`<div class="rzgrid g11">${blocoVendas(P)}${blocoMetas(P)}</div>`,`<div class="rzgrid g11">${blocoMapa(P)}${blocoCanais(P)}</div>`,blocoCascata(P),`<div class="rzgrid g11">${blocoFila(P)}${blocoFeed(P)}</div>`,blocoCaixa(P),blocoVitrine(P)].filter((s)=>s&&!/^\s*<div[^>]*class="rzgrid[^"]*"[^>]*>\s*<\/div>\s*$/.test(s));
+function modoTV(){const P=painel(),slides=[`<div class="rztv-col">${blocoAbertura(P)}${blocoVendas(P)}</div>`,`<div class="rztv-col">${blocoMapa(P)}${blocoCanais(P)}</div>`,`<div class="rztv-col">${blocoMetas(P)}${blocoCascata(P)}</div>`,`<div class="rztv-col">${blocoFila(P)}${blocoFeed(P)}</div>`,`<div class="rztv-col">${blocoCaixa(P)}${blocoVitrine(P)}</div>`].filter((s)=>s&&s.replace(/<[^>]*>/g,'').trim());
  const el=document.createElement('div');el.className='rztv rz';el.setAttribute('role','dialog');el.setAttribute('aria-label','Modo TV');
  el.innerHTML=`<div class="rztv-top"><strong>${esc(window.Marca?.nome?.()||'Jarvis')}</strong><span class="rztv-rel"></span><div class="rztv-dots">${slides.map((_,i)=>`<i data-i="${i}"></i>`).join('')}</div><button class="small" data-rztv="sair">${icon('sair')} Sair</button></div><div class="rztv-s"></div><div id="rzTip" class="rztip" hidden></div>`;
- document.body.appendChild(el);let i=0;const ir=n=>{i=(n+slides.length)%slides.length;el.querySelector('.rztv-s').innerHTML=`<div class="rztv-in">${slides[i]}</div>`;el.querySelectorAll('.rztv-dots i').forEach((d,k)=>d.classList.toggle('on',k===i));animar()};
+ document.body.appendChild(el);let i=0;
+ const ajustar=()=>{const s=el.querySelector('.rztv-s'),inner=el.querySelector('.rztv-in');if(!s||!inner)return;inner.style.transform='none';requestAnimationFrame(()=>{const w=inner.offsetWidth,h=inner.offsetHeight;if(w&&h)inner.style.transform=`scale(${Math.min(1.7,(s.clientWidth-12)/w,(s.clientHeight-12)/h)})`})};
+ const ir=n=>{i=(n+slides.length)%slides.length;el.querySelector('.rztv-s').innerHTML=`<div class="rztv-in">${slides[i]}</div>`;el.querySelectorAll('.rztv-dots i').forEach((d,k)=>d.classList.toggle('on',k===i));animar();ajustar()};
+ addEventListener('resize',ajustar,{passive:true});
  const rel=()=>{const r=el.querySelector('.rztv-rel');if(r)r.textContent=new Date().toLocaleString('pt-BR',{weekday:'long',hour:'2-digit',minute:'2-digit'})};rel();
  const timer=setInterval(()=>ir(i+1),12000),relogio=setInterval(rel,30000);
- const sair=()=>{clearInterval(timer);clearInterval(relogio);removeEventListener('keydown',tecla,true);el.remove();tv=null;try{if(document.fullscreenElement)document.exitFullscreen()}catch{}};
+ const sair=()=>{clearInterval(timer);clearInterval(relogio);removeEventListener('keydown',tecla,true);removeEventListener('resize',ajustar);el.remove();tv=null;try{if(document.fullscreenElement)document.exitFullscreen()}catch{}};
  const tecla=e=>{if(e.key==='Escape'){e.preventDefault();sair()}else if(e.key==='ArrowRight')ir(i+1);else if(e.key==='ArrowLeft')ir(i-1)};addEventListener('keydown',tecla,true);
  el.addEventListener('click',e=>{if(e.target.closest('[data-rztv="sair"]'))sair();else if(e.target.closest('.rztv-dots i'))ir(Number(e.target.dataset.i));else if(e.target.closest('[data-nav]')){sair()}});
  document.addEventListener('fullscreenchange',function f(){if(!document.fullscreenElement&&tv){document.removeEventListener('fullscreenchange',f);sair()}});

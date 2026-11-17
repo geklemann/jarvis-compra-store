@@ -96,7 +96,7 @@ function cartaoPendente(pl){const p=st.pend[pl],ml=pl==='ml';let corpo='';
 
 function view(){if(!window.Cloud?.ws)return '<div class="empty">Entre na conta para usar os relatórios.</div>';
  const atalhos=(()=>{const [a,m]=hojeISO().split('-').map(Number),l=[];for(let i=1;i<=6;i++){const d=new Date(Date.UTC(a,m-1-i,1)),f=new Date(Date.UTC(a,m-i,0));l.push([d.toISOString().slice(0,10),f.toISOString().slice(0,10),mesNome(d.toISOString().slice(0,7))])}return l.reverse()})();
- return `<div class="notice"><b>Para o escritório de contabilidade.</b> Os relatórios de cada marketplace, buscados direto na plataforma na hora da consulta. Nada é alterado. Períodos de vários meses levam alguns minutos; o Excel sai com uma aba por mês.</div>
+ return `<div class="notice"><b>Para o escritório de contabilidade.</b> Os relatórios de cada marketplace, buscados direto na plataforma na hora da consulta. Nada é alterado. Períodos de vários meses levam alguns minutos; o Excel sai com uma aba por mês. A composição do saldo a receber de cada plataforma, montada com os dados do Jarvis, fica em <button class="small quiet" data-nav="saldosreceber">Saldos a receber por plataforma</button></div>
  <div class="segtabs rsh-plat">${Object.entries(PLAT).map(([k,p])=>`<button class="${st.plat===k?'on':''}" data-rsh-plat="${k}">${p.nome}</button>`).join('')}</div>
  <div class="card rsh-periodo"><div class="row wrap"><label class="rsh-l">De<input type="date" data-rsh-de value="${st.de}"></label><label class="rsh-l">Até<input type="date" data-rsh-ate value="${st.ate}"></label>
   <div class="segtabs rsh-atalhos">${atalhos.map(([d,f,n])=>`<button class="${st.de===d&&st.ate===f?'on':''}" data-rsh-per="${d}|${f}">${n}</button>`).join('')}</div></div></div>
@@ -107,5 +107,7 @@ document.addEventListener('click',e=>{const b=e.target.closest('[data-rsh-gerar]
  if(d.rshGerar)gerar(d.rshGerar);else if(d.rshXlsx)excel(d.rshXlsx);else if(d.rshCsv)csv(d.rshCsv);else if(d.rshMes)excel(d.rshMes,d.m);else if(d.rshPend)pendente(d.rshPend);else if(d.rshPlat){st.plat=d.rshPlat;redesenhar()}
  else if(d.rshPer){const [x,y]=d.rshPer.split('|');st.de=x;st.ate=y;redesenhar()}});
 document.addEventListener('change',e=>{const x=e.target;if(x.matches('[data-rsh-de]'))st.de=x.value;else if(x.matches('[data-rsh-ate]'))st.ate=x.value;else return;redesenhar()});
+// Consulta do saldo (pendente da Shopee / do Mercado Pago), reaproveitada em Saldos a receber por plataforma (saldosreceber.js).
+window.MarketplaceSaldo={consultar:p=>fn({tipo:PLAT[p].saldo})};
 addPage(PAG,'download','Marketplace para contabilidade',view,'Relatórios da Shopee e do Mercado Livre / Mercado Pago (pedidos, carteira, renda, liberações e saldo), prontos para o escritório de contabilidade baixar.','',()=>{});
 })();
