@@ -10,7 +10,7 @@ const nf=(v,d=0)=>Number(v||0).toLocaleString('pt-BR',{maximumFractionDigits:d})
 const ORIGENS=[[0,'0 · Nacional'],[1,'1 · Importação direta'],[2,'2 · Importado no mercado interno'],[3,'3 · Nacional, conteúdo importado > 40%'],[5,'5 · Nacional, conteúdo importado ≤ 40%'],[8,'8 · Nacional, conteúdo importado > 70%']];
 const CORES={'Shopee':'#ee4d2d','MercadoLivre':'#e6b800','Mercado Livre':'#e6b800','Magalu':'#0086ff','MagazineLuiza':'#0086ff','IntegraCommerce':'#0086ff'};
 async function fn(action,body={}){const r=await Cloud.client.functions.invoke('integrations',{body:{workspace_id:Cloud.ws,action,...body}});if(r.error){let msg=r.error.message;try{msg=(await r.error.context.json()).error||msg}catch{}throw Error(msg)}return r.data}
-const podeEditar=()=>['owner','member','estoque'].includes(window.Cloud?.role||'owner');
+const podeEditar=()=>(window.Acesso?window.Acesso.permite(['owner','member','estoque'],['estoque:w']):['owner','member','estoque'].includes(window.Cloud?.role||'owner'));
 async function carregar(){if(st.carregando||!window.Cloud?.ws)return;st.carregando=true;st.erro='';try{st.vinc=await fn('catalogo_vinculos')}catch(e){st.erro=e.message;st.vinc={canais:[],vinculos:[]}}finally{st.carregando=false;if(page==='catalogo'&&!document.querySelector('.modalback'))render()}}
 function base(){const lista=(window.Estoque?.lista?.()||[]).filter(p=>p.formato!=='V'),V=st.vinc?.vinculos||[],canais=(st.vinc?.canais||[]).filter(c=>c.ativo);
  const porProd=new Map();for(const v of V){const k=String(v.produto);(porProd.get(k)||porProd.set(k,[]).get(k)).push(v)}

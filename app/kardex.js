@@ -20,8 +20,8 @@ window.Reiniciar?.registrar(st,['sku','dias','filtro']); // estado de tela: volt
 const cfg=()=>({inicio:'',...(db.gerencial?.kardex||{})});
 // Documentos anteriores ao início do kardex não geram movimento (evita lançar de novo o que já foi ajustado à mão).
 function inicio(){let i=cfg().inicio;if(!i){i=hoje();db.gerencial={...(db.gerencial||{}),kardex:{...cfg(),inicio:i}};save()}return i}
-const podeLancar=()=>['owner','member','estoque'].includes(window.Cloud?.role||'owner');
-const podeCriar=()=>['owner','member','estoque','vendas','financeiro'].includes(window.Cloud?.role||'owner');
+const podeLancar=()=>(window.Acesso?window.Acesso.permite(['owner','member','estoque'],['estoque:w']):['owner','member','estoque'].includes(window.Cloud?.role||'owner'));
+const podeCriar=()=>(window.Acesso?window.Acesso.permite(['owner','member','estoque','vendas','financeiro'],['estoque:w','financeiro:w']):['owner','member','estoque','vendas','financeiro'].includes(window.Cloud?.role||'owner'));
 
 async function fn(action,body){const r=await Cloud.client.functions.invoke('integrations',{body:{workspace_id:Cloud.ws,action,...body}});if(r.error){let msg=r.error.message;try{msg=(await r.error.context.json()).error||msg}catch{}throw Error(msg)}return r.data}
 async function carregar(){if(st.carregando||!window.Cloud?.client)return;st.carregando=true;

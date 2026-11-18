@@ -31,6 +31,13 @@ const GK = await import('../autoria/variantes.mjs').catch(() => null);
 export const SITE_GK = `https://${DOMINIO_GK}`;
 /** Os 2 módulos do Jarvis ERP que o Jarvis Ponto (ponto.js e ponto.html) importa. */
 export const SIMPLES_PERMITIDOS = Object.freeze(['simples/motor/rep_p.js', 'simples/modulos/pessoas/telas/assinar_p7s.js']);
+/** Os módulos comuns a todos os produtos que ficam fora das pastas do E-Commerce e que as telas dele importam: a conferência
+ * de senha vazada (cadastro em cloud.js e troca de senha em seguranca.js; AGENTS.md). Sem ela no build, o import dinâmico
+ * caía no catch e a instância criava e trocava senha sem conferir se a senha vazou. O teste
+ * testes/instancia_referencias.test.mjs falha se uma tela do E-Commerce passar a importar arquivo que o build não leva. */
+export const COMUNS_PERMITIDOS = Object.freeze(['escritorio/motor/senhas_vazadas.js']);
+/** Tudo o que vai de fora das pastas do E-Commerce (SIMPLES_PERMITIDOS + COMUNS_PERMITIDOS), arquivo por arquivo. */
+export const DE_FORA_PERMITIDOS = Object.freeze([...SIMPLES_PERMITIDOS, ...COMUNS_PERMITIDOS]);
 /** Pastas inteiras do E-Commerce. */
 export const PASTAS = Object.freeze(['app', 'vendor', 'brand']);
 /** Bibliotecas de web/vendor que só os outros produtos usam e nunca vão para a instância (a Compra Store é só E-Commerce):
@@ -95,7 +102,7 @@ export function arquivosDoApp(fonte, { demo = false } = {}) {
     out.push(d.name);
   }
   for (const p of [...PASTAS, ...(demo ? ['loja-modelo'] : [])]) andar(fonte, p, out);
-  for (const f of SIMPLES_PERMITIDOS) if (fs.existsSync(path.join(fonte, f))) out.push(f);
+  for (const f of DE_FORA_PERMITIDOS) if (fs.existsSync(path.join(fonte, f))) out.push(f);
   return [...new Set(out)].filter((f) => !VENDOR_FORA.includes(f)).sort();
 }
 

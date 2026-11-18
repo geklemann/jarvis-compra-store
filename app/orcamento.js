@@ -23,7 +23,7 @@ const num=s=>{const t=String(s??'').trim();if(!t)return null;const v=Number(t.re
 const grande=v=>Math.abs(Number(v)||0)>=1e6?(v<0?'−':'')+'R$ '+(Math.abs(v)/1e6).toLocaleString('pt-BR',{maximumFractionDigits:2})+' mi':money(v);
 const fmt=v=>v?Number(v).toLocaleString('pt-BR',{maximumFractionDigits:2}):'';
 const papel=()=>window.Cloud?.role||'owner',dono=()=>papel()==='owner',meuEmail=()=>String(window.Cloud?.session?.user?.email||'').toLowerCase();
-const editor=()=>['owner','member','financeiro','contador'].includes(papel());
+const editor=()=>(window.Acesso?window.Acesso.permite(['owner','member','financeiro','contador'],['contabil:w'],papel()):['owner','member','financeiro','contador'].includes(papel()));
 const aberta=v=>v&&['rascunho','em_revisao'].includes(v.status),podeEditar=v=>aberta(v)&&editor();
 const STATUS={rascunho:['','Rascunho'],em_revisao:['warn','Em revisão'],aprovado:['ok','Aprovado'],arquivado:['','Arquivado']};
 const TIPO={orcamento:'Orçamento',forecast:'Forecast',cenario:'Cenário'};

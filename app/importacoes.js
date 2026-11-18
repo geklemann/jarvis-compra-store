@@ -13,7 +13,7 @@ const dBR=d=>d?new Date(String(d).length>10?d:d+'T12:00:00').toLocaleDateString(
 const r2=n=>Math.round((Number(n)||0)*100)/100;
 const quem=()=>window.Cloud?.session?.user?.email||'—';
 const nuvem=()=>!!(window.Cloud?.client&&window.Cloud?.ws);
-const podeGravar=()=>['owner','member','estoque','financeiro'].includes(window.Cloud?.role||'owner')&&!window.Perfis?.somenteLeitura?.(page);
+const podeGravar=()=>(window.Acesso?window.Acesso.permite(['owner','member','estoque','financeiro'],['estoque:w','financeiro:w']):['owner','member','estoque','financeiro'].includes(window.Cloud?.role||'owner'))&&!window.Perfis?.somenteLeitura?.(page);
 const novoId=p=>p+Date.now().toString(36)+Math.random().toString(36).slice(2,6);
 /** Número digitado: aceita 1.234,56 e 1234.56. */
 function num(v){if(typeof v==='number')return Number.isFinite(v)?v:0;let s=String(v??'').trim().replace(/\s/g,'');if(!s)return 0;if(s.includes(','))s=s.replace(/\./g,'').replace(',','.');const n=Number(s);return Number.isFinite(n)?n:0}

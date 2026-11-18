@@ -109,7 +109,7 @@ async function limparCache(){try{const d=await idb();d.transaction('dados','read
 async function atualizarSegundoPlano(){Cloud.atualizando=true;paintStatus();try{for(let i=0;i<3;i++){await flush();if(await load(true))break}if(Cloud.state==='loading')Cloud.state='saved'}catch(x){console.warn('atualização em segundo plano',x);Cloud.state='saved'}Cloud.atualizando=false;Cloud.daCache=false;
  const redesenhar=()=>{if(document.querySelector('.modalback'))return setTimeout(redesenhar,2000);render()};const a=document.activeElement;if(a&&/^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName)&&a.closest('#view'))a.addEventListener('blur',()=>setTimeout(redesenhar,50),{once:true});else redesenhar()}
 Cloud.reload=async()=>{await flush();await load();render()};
-Cloud.switchWs=async id=>{const w=Cloud.workspaces.find(x=>x.id===id);if(!w||id===Cloud.ws)return;await flush();Cloud.ws=w.id;Cloud.wsName=w.name;Cloud.role=w.role;Cloud.paginas=w.paginas||null;Cloud.leitura=w.leitura||null;Cloud.telasConhecidas=w.telasConhecidas||null;try{localStorage.setItem('concilia-ws',id)}catch{}await load();window.Integrations&&(Integrations.state.loaded=false);render();toast('Workspace: '+w.name)};
+Cloud.switchWs=async id=>{const w=Cloud.workspaces.find(x=>x.id===id);if(!w||id===Cloud.ws)return;await flush();Cloud.ws=w.id;Cloud.wsName=w.name;Cloud.role=w.role;Cloud.paginas=w.paginas||null;Cloud.leitura=w.leitura||null;Cloud.acessos=w.acessos||null;Cloud.telasConhecidas=w.telasConhecidas||null;try{localStorage.setItem('concilia-ws',id)}catch{}await load();window.Integrations&&(Integrations.state.loaded=false);render();toast('Workspace: '+w.name)};
 Cloud.renameWs=async name=>{const {error}=await sb.from('workspaces').update({name}).eq('id',Cloud.ws);if(error)throw error;Cloud.wsName=name;const w=Cloud.workspaces.find(x=>x.id===Cloud.ws);if(w)w.name=name};
 
 async function flush(){
@@ -166,19 +166,28 @@ function erroAberturaView(session,msg){const espera=[5,15,30][tentativas]||0;
  $('#app').innerHTML=`<div class="auth"><div class="authcard"><div class="authhead"><img class="authlogo" src="brand/jarvis-192.png" alt="Jarvis"><div class="authname">Jarvis</div></div><h2>Não foi possível abrir agora</h2><p class="caption">${esc(msg)}</p><p class="caption" id="abrNova">${espera?`Tentando de novo em ${espera} segundos…`:'Se continuar, fale com o suporte do Jarvis.'}</p><div class="row wrap" style="margin-top:14px"><button class="primary" id="abrTentar">Tentar de novo</button><button class="quiet small" id="abrSair">Sair</button></div></div></div>`;
  let t=espera?setTimeout(()=>{tentativas++;start(session)},espera*1000):null;
  $('#abrTentar').onclick=()=>{clearTimeout(t);tentativas++;start(session)};$('#abrSair').onclick=()=>{clearTimeout(t);sb.auth.signOut({scope:'local'})}}
+const CHAVE_EMAIL='jarvis-email-lembrado';
+function emailLembrado(){try{return localStorage.getItem(CHAVE_EMAIL)||''}catch{return ''}}
+function lembrarEmail(email){try{if(email)localStorage.setItem(CHAVE_EMAIL,String(email).trim().toLowerCase());else localStorage.removeItem(CHAVE_EMAIL)}catch{/* navegador sem armazenamento: só não lembra */}}
 function loginView(msg=''){window.Assistant?.sync();
  $('#app').innerHTML=`<div class="auth"><div class="authcard"><div class="authhead"><img class="authlogo" src="brand/jarvis-192.png" alt="Jarvis"><div class="authname">Jarvis</div><div class="authslogan">O ERP do futuro, hoje · Você vende. O Jarvis cuida do resto.</div></div>
  <h1 style="font-size:24px">Entre na sua operação</h1><p>Já tem conta? Informe e-mail e senha e clique em <strong>Entrar</strong>. Primeira vez? Clique em <strong>Criar conta</strong> e teste grátis por 7 dias. Seus dados ficam protegidos na nuvem e sincronizam entre computadores.</p>
- <form id="authForm" autocomplete="on"><div id="authNomeBox" hidden><label for="authNome">Seu nome</label><input id="authNome" autocomplete="name" style="width:100%" placeholder="Nome e sobrenome"></div><label for="authEmail">E-mail</label><input id="authEmail" type="email" required autocomplete="email" style="width:100%">
- <label for="authPass">Senha</label><input id="authPass" type="password" minlength="8" autocomplete="current-password" style="width:100%" placeholder="Mínimo de 8 caracteres">
+ <form id="authForm" autocomplete="on"><div id="authNomeBox" hidden><label for="authNome">Seu nome</label><input id="authNome" autocomplete="name" style="width:100%" placeholder="Nome e sobrenome"></div><label for="authEmail">E-mail</label><input id="authEmail" type="email" required autocomplete="username" autocapitalize="none" spellcheck="false" value="" style="width:100%">
+ <label for="authPass">Senha</label><input id="authPass" type="password" minlength="8" autocomplete="current-password" value="" style="width:100%" placeholder="Mínimo de 8 caracteres">
+ <label class="row" style="gap:8px;align-items:center;margin-top:10px"><input type="checkbox" class="check" id="authLembrar"> <span class="caption">Lembrar meu e-mail neste aparelho</span></label>
  <div class="row wrap" style="margin-top:18px"><button class="primary" type="submit" data-auth="login">Entrar</button><button type="submit" data-auth="signup">Criar conta</button><button type="submit" class="quiet small" data-auth="magic">Receber link por e-mail</button></div></form>
  <div id="authMsg" class="caption" style="margin-top:16px;min-height:20px">${esc(msg)}</div></div></div>`;
+ // O e-mail abre vazio: o Jarvis não guarda nem preenche nada sozinho. Só com "Lembrar meu e-mail neste aparelho"
+ // marcado o e-mail (nunca a senha) fica neste navegador; desmarcar apaga. Salvar usuário e senha é com o gerenciador
+ // de senhas do navegador, escolha de cada pessoa.
+ const lembrado=emailLembrado(),campo=$('#authEmail');campo.value=lembrado;$('#authPass').value='';$('#authLembrar').checked=!!lembrado;
+ $('#authLembrar').onchange=e=>{if(!e.target.checked)lembrarEmail('')};
  let mode='login';
  // Veio do botão "Teste grátis" do site (jaarvis.com.br): abre já no cadastro, com "Criar conta" como botão principal (Enter cria a conta).
  if(/[?&]cadastro=1/.test(location.search)){mode='signup';$('#authNomeBox').hidden=false;$('.authcard h1').textContent='Crie sua conta e teste grátis por 7 dias';
   const bs=$('#authForm button[data-auth="signup"]'),bl=$('#authForm button[data-auth="login"]');bs.classList.add('primary');bl.classList.remove('primary');bl.textContent='Já tenho conta: entrar';bs.parentElement.prepend(bs);$('#authPass').autocomplete='new-password'}
  $('#authForm').addEventListener('click',e=>{const b=e.target.closest('button[data-auth]');if(b){mode=b.dataset.auth;if(mode==='signup')$('#authNomeBox').hidden=false}},true);
- $('#authForm').onsubmit=async e=>{e.preventDefault();const email=$('#authEmail').value.trim(),password=$('#authPass').value,out=$('#authMsg');out.textContent='Aguarde…';
+ $('#authForm').onsubmit=async e=>{e.preventDefault();const email=$('#authEmail').value.trim(),password=$('#authPass').value,out=$('#authMsg');out.textContent='Aguarde…';lembrarEmail($('#authLembrar')?.checked?email:'');
   try{let r;const redirect=location.origin+location.pathname;
    if(mode==='magic')r=await sb.auth.signInWithOtp({email,options:{emailRedirectTo:redirect}});
    else{if(password.length<8)throw Error('Informe uma senha com pelo menos 8 caracteres.');r=mode==='signup'?await (async()=>{const nome=($('#authNome')?.value||'').trim();if(!nome){$('#authNomeBox').hidden=false;$('#authNome').focus();throw Error('Para criar a conta, informe também o seu nome.')}const sv=await import('./escritorio/motor/senhas_vazadas.js').catch(()=>null);if(sv){const c=await sv.conferirSenhaNova(password,{jaAvisada:window.__jarvisSenhaAvisada||null});if(!c.segue){window.__jarvisSenhaAvisada=c.aviso?c.marca:null;throw Error(c.mensagem)}}return sb.auth.signUp({email,password,options:{emailRedirectTo:redirect,data:{nome}}})})():await sb.auth.signInWithPassword({email,password})}
@@ -188,17 +197,39 @@ function loginView(msg=''){window.Assistant?.sync();
   }catch(err){out.textContent=({'Invalid login credentials':'E-mail ou senha incorretos.','Signups not allowed for this instance':'Novos cadastros estão fechados. Peça ao dono do workspace para liberar seu acesso.','Signups not allowed for otp':'Novos cadastros estão fechados. Use um e-mail que já tenha conta.'})[err.message]||err.message}};
 }
 
-// Conta sem empresa: cria a própria (teste grátis de 7 dias) ou espera o convite de uma empresa que já usa o Jarvis.
-async function aguardandoView(session){let r=null;try{const {data:req}=await sb.from('access_requests').select('status,created_at,decided_at').eq('user_id',session.user.id).order('created_at',{ascending:false}).limit(1);r=req?.[0]||null}catch{}
- const email=esc(session.user.email),antigo=r&&['recusado','pendente'].includes(r.status)?`<p class="caption" style="margin-top:8px">${r.status==='recusado'?'Um pedido de acesso anterior não foi aprovado':'Há um pedido de acesso anterior aguardando'} (${new Date(r.created_at).toLocaleDateString('pt-BR')}).</p>`:'',inst=window.CONCILIA_CONFIG?.instancia?.id;
+// Conta sem empresa. No site do Jarvis: cria a própria (teste grátis de 7 dias) ou espera o convite de uma empresa que
+// já usa o Jarvis. Numa instância (o Jarvis da empresa, no endereço dela): pede acesso a esta empresa (pedir_acesso,
+// um pedido por conta, reaberto quando foi recusado) e espera quem administra liberar. Em todos: o e-mail exato da conta
+// e o endereço da instalação, para a pessoa conferir com quem libera (liberar em outra instalação não vale aqui).
+const MSG_PEDIDO={pendente:'Pedido enviado. Quem administra a empresa vê em Equipe e acessos › Pedidos de acesso; quando liberar, clique em Verificar.',
+ membro:'Sua conta já tem acesso: clique em Verificar.',limite:'Você já pediu várias vezes. Aguarde quem administra responder (ou tente de novo mais tarde).',
+ confirmar:'Confirme o seu e-mail pelo link que chegou na sua caixa de entrada e tente de novo.',indisponivel:'Este endereço não recebe pedidos de acesso: peça a quem administra para convidar o seu e-mail.'};
+async function aguardandoView(session,aviso=''){let r=null;try{const {data:req}=await sb.from('access_requests').select('status,created_at,decided_at').eq('user_id',session.user.id).order('created_at',{ascending:false}).limit(1);r=req?.[0]||null}catch{}
+ const I=window.CONCILIA_CONFIG?.instancia||null,inst=I?.id,email=esc(session.user.email||''),endereco=esc(I?.dominio||location.host||''),empresa=esc(I?.nome||''),
+  quando=d=>new Date(d).toLocaleString('pt-BR',{dateStyle:'short',timeStyle:'short'}),dia=d=>new Date(d).toLocaleDateString('pt-BR');
+ const conta=`<div class="notice" id="accConta" style="margin-top:12px"><span class="caption">Sua conta</span><br><strong id="accEmail" style="font-size:18px;word-break:break-all;user-select:all">${email}</strong>
+  <br><span class="caption">Você está em</span><br><strong id="accOnde">${inst&&empresa?`${empresa} · `:''}${endereco}</strong>
+  <p class="caption" style="margin:6px 0 0">Confira com quem libera: o acesso vale para este e-mail exatamente (um ponto ou uma letra a mais é outra conta) e só para quem entra por este endereço.</p></div>`;
+ let pedido='';
+ if(inst){const st=r?.status;
+  pedido=st==='pendente'?`<p id="accStatus" class="caption" style="margin-top:10px"><span class="badge info">Pedido enviado</span> em ${quando(r.created_at)}. Quem administra a empresa vê em <em>Equipe e acessos › Pedidos de acesso</em>. Quando liberar, clique em Verificar.</p>`
+   :st==='recusado'?`<p id="accStatus" class="caption" style="margin-top:10px"><span class="badge warn">Não aprovado</span> Um pedido de acesso anterior (${dia(r.created_at)}) não foi aprovado. Se foi engano, peça de novo.</p><div class="row wrap" style="margin-top:8px"><button class="primary" id="accPedir">Pedir de novo</button></div>`
+   :`<div class="row wrap" style="margin-top:12px"><button class="primary" id="accPedir">Pedir acesso a esta empresa</button></div><p class="caption" style="margin-top:6px">Quem administra recebe o pedido em <em>Equipe e acessos</em> e escolhe as telas que você vai usar.</p>`}
+ const antigo=!inst&&r&&['recusado','pendente'].includes(r.status)?`<p class="caption" style="margin-top:8px">${r.status==='recusado'?'Um pedido de acesso anterior não foi aprovado':'Há um pedido de acesso anterior aguardando'} (${dia(r.created_at)}).</p>`:'';
  $('#app').innerHTML=`<div class="auth"><div class="authcard"><div class="authhead"><img class="authlogo" src="brand/jarvis-192.png" alt="Jarvis"><div class="authname">Jarvis</div><div class="authslogan">O ERP do futuro, hoje</div></div>
- <h1 style="font-size:23px">Bem-vindo ao Jarvis</h1>${inst?`<p>Sua conta <strong>${email}</strong> está pronta, mas ainda <strong>sem acesso</strong>. Peça ao administrador para liberar o seu e-mail em <em>Equipe e acessos</em>; quando liberarem, clique em Verificar.</p>`:`<p>Sua conta <strong>${email}</strong> está pronta. Crie a sua empresa e teste grátis por 7 dias: conecte o ERP e os marketplaces só para leitura e veja quanto cada venda realmente deixa.</p>
+ <h1 style="font-size:23px">Bem-vindo ao Jarvis</h1>${inst?`<p>Sua conta está pronta, mas ainda <strong>sem acesso</strong> à empresa${empresa?` <strong>${empresa}</strong>`:''}. Peça acesso abaixo (ou peça a quem administra para liberar o seu e-mail em <em>Equipe e acessos</em>) e, quando liberarem, clique em Verificar.</p>${conta}${pedido}`:`<p>Sua conta <strong>${email}</strong> está pronta. Crie a sua empresa e teste grátis por 7 dias: conecte o ERP e os marketplaces só para leitura e veja quanto cada venda realmente deixa.</p>
  <form id="novaEmp" class="row wrap" style="gap:8px;margin-top:14px"><label for="novaEmpNome" class="sr-only" style="position:absolute;left:-9999px">Nome da empresa</label><input id="novaEmpNome" required minlength="2" maxlength="120" placeholder="Nome da sua empresa" style="flex:1;min-width:200px"><button class="primary" type="submit">Criar minha empresa</button></form>
- <p class="caption red" id="novaEmpErro" role="alert"></p>`}
- <div class="notice" style="margin-top:22px">${inst?`Peça ao administrador para liberar o seu e-mail <strong>${email}</strong> em <em>Equipe e acessos</em>. Depois de liberarem, clique em Verificar.`:`<strong>Vou acessar o Jarvis de uma empresa (sou da equipe ou da contabilidade)</strong><br>Não crie empresa. Peça ao administrador dela para te convidar pelo e-mail <strong>${email}</strong> em <em>Equipe e acessos</em>. Com o convite feito, clique em Verificar.`}
+ <p class="caption red" id="novaEmpErro" role="alert"></p>${conta}`}
+ <p class="caption" id="accAviso" role="status" style="margin-top:8px">${esc(aviso)}</p>
+ <div class="notice" style="margin-top:22px">${inst?`Já liberaram o seu e-mail? Clique em Verificar.`:`<strong>Vou acessar o Jarvis de uma empresa (sou da equipe ou da contabilidade)</strong><br>Não crie empresa. Peça ao administrador dela para te convidar pelo e-mail <strong>${email}</strong> em <em>Equipe e acessos</em>. Com o convite feito, clique em Verificar.`}
   <div class="row wrap" style="margin-top:10px"><button id="accCheck">Verificar</button></div>${antigo}</div>
  <div class="row" style="margin-top:16px"><button class="quiet small" id="accOut">Sair</button></div></div></div>`;
  $('#accCheck').onclick=()=>start(session);$('#accOut').onclick=async()=>{await sb.auth.signOut({scope:'local'})};
+ // Pedir acesso (instância): cria ou reabre o pedido; a função do banco limita a repetição.
+ const bp=$('#accPedir');if(bp)bp.onclick=async()=>{bp.disabled=true;let msg='';
+  try{const {data,error}=await sb.rpc('pedir_acesso');if(error)throw error;if(data?.status==='membro'){await start(session);return}msg=MSG_PEDIDO[data?.status]||'Pedido registrado.'}
+  catch(x){msg='Não foi possível pedir agora ('+(x.message||x)+'). Tente de novo.';bp.disabled=false;const a=$('#accAviso');if(a)a.textContent=msg;return}
+  await aguardandoView(session,msg)};
  // Cadastro da própria empresa: vira dono, começa o teste grátis de 7 dias e abre os primeiros passos.
  const nf=$('#novaEmp');if(nf)nf.onsubmit=async e=>{e.preventDefault();const b=e.target.querySelector('button'),nome=$('#novaEmpNome').value.trim();b.disabled=true;$('#novaEmpErro').textContent='';
   try{const {error}=await sb.rpc('criar_empresa',{nome});if(error)throw error;try{sessionStorage.setItem('jarvis_primeiros_passos','1')}catch{}location.hash='#comecar';await start(session)}
@@ -224,12 +255,12 @@ async function start(session){
   try{await sb.rpc('aceitar_convites')}catch{}
   const {data:ws,error}=await sb.rpc('ensure_workspace');if(error)throw error;
   // Quem foi adicionado a uma equipe abre o workspace da equipe; a escolha fica lembrada neste navegador.
-  const {data:mems,error:me}=await sb.from('workspace_members').select('workspace_id,role,paginas,leitura,telas_conhecidas,created_at,workspaces(name)').eq('user_id',session.user.id).order('created_at');if(me)throw me;
+  const {data:mems,error:me}=await sb.from('workspace_members').select('workspace_id,role,paginas,leitura,acessos,telas_conhecidas,created_at,workspaces(name)').eq('user_id',session.user.id).order('created_at');if(me)throw me;
   if(!(mems||[]).length){await aguardandoView(session);return}
-  Cloud.workspaces=(mems||[]).map(m=>({id:m.workspace_id,role:m.role,paginas:m.paginas||null,leitura:m.leitura||null,telasConhecidas:m.telas_conhecidas||null,name:m.workspaces?.name||'Minha operação'}));
+  Cloud.workspaces=(mems||[]).map(m=>({id:m.workspace_id,role:m.role,paginas:m.paginas||null,leitura:m.leitura||null,acessos:m.acessos||null,telasConhecidas:m.telas_conhecidas||null,name:m.workspaces?.name||'Minha operação'}));
   let pref=null;try{pref=localStorage.getItem('concilia-ws')}catch{}
   const chosen=Cloud.workspaces.find(w=>w.id===pref)||Cloud.workspaces.find(w=>w.role==='member')||Cloud.workspaces.find(w=>w.id===ws)||{id:ws,role:'owner',name:'Minha operação'};
-  Cloud.ws=chosen.id;Cloud.wsName=chosen.name;Cloud.role=chosen.role;Cloud.paginas=chosen.paginas||null;Cloud.leitura=chosen.leitura||null;Cloud.telasConhecidas=chosen.telasConhecidas||null;
+  Cloud.ws=chosen.id;Cloud.wsName=chosen.name;Cloud.role=chosen.role;Cloud.paginas=chosen.paginas||null;Cloud.leitura=chosen.leitura||null;Cloud.acessos=chosen.acessos||null;Cloud.telasConhecidas=chosen.telasConhecidas||null;
   const doCache=await lerCache(Cloud.ws);if(doCache){aplicarDados(doCache);Cloud.daCache=true}else await load();
   // Ao entrar, sempre a tela inicial. Fica na tela do endereço quando a página só recarregou no meio do uso
   // (atualização automática, F5, aba que o navegador descartou para poupar memória, volta da autorização de uma
@@ -238,6 +269,8 @@ async function start(session){
   const recarga=(()=>{try{return document.wasDiscarded||['reload','back_forward'].includes(performance.getEntriesByType('navigation')[0]?.type)||/[?&](ok|erro)=/.test(location.hash)}catch{return false}})();
   if(h&&(manter||recarga||h==='comecar'))page=decodeURIComponent(h);else{page=window.Perfis?.inicio?.()||'resumo';if(h)try{history.replaceState(null,'',location.pathname+location.search)}catch{}}
   tentativas=0;render();
+  // Quem administra fica sabendo dos pedidos de acesso ao entrar (aviso e o número no menu do nome).
+  if(Cloud.role==='owner')setTimeout(()=>window.Integrations?.conferirPedidos?.(true),1200);
   if(Cloud.daCache)setTimeout(atualizarSegundoPlano,300);
   if(Cloud.localBackup&&!db.orders.length&&!db.receipts.length)offerMigration();
  }catch(e){console.error(e);erroAberturaView(session,'O Jarvis não conseguiu carregar a sua empresa ('+(e.message||e)+'). Seus dados estão seguros; é só tentar de novo.')}

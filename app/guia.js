@@ -64,7 +64,7 @@ const G={
  precos:['Formação de preço: quanto cobrar em cada canal para ter a margem desejada, com tarifas, frete e impostos.','Ao lançar produto ou mudar preço.','Simule o preço e veja a margem por canal.'],
  relfin:['Relatórios financeiros prontos para imprimir ou exportar (contas, fluxo, extrato).','Quando precisar mandar para alguém.','Escolha o relatório e o período.'],
  reports:['Relatórios de vendas e conciliação.','Quando precisar exportar vendas.','Escolha o período e exporte.'],
- equipe:['Quem tem acesso e com qual perfil (administrador, financeiro, contabilidade, atendimento, estoque) e quais menus cada pessoa vê.','Ao dar ou tirar acesso.','Convide pelo e-mail, libere pedidos de acesso e use Menus e telas para escolher o que cada pessoa vê.'],
+ equipe:['Quem tem acesso, quem administra a equipe e as configurações e quais menus e telas cada pessoa vê (sempre por tela, sem perfis prontos).','Ao dar ou tirar acesso.','Convide pelo e-mail já marcando as telas, libere pedidos de acesso (pendentes ou recusados) e use Menus e telas para mudar o que cada pessoa vê.'],
  auditoria:['Registro de tudo que foi incluído, alterado ou excluído, por quem e quando.','Para conferir uma mudança.','Filtre por área, pessoa ou período.'],
  history:['Histórico de importações e ações da equipe (vínculos, fechamentos, investigações), com quem fez e quando.','Para conferir o que foi importado ou feito.','Role a trilha, exporte a auditoria ou baixe o backup JSON.'],
  lancamento:['Lançar uma conta a pagar à mão (boleto, despesa), com parcelas.','Quando uma despesa não veio por nota.','Preencha fornecedor, valor, vencimento e categoria.'],

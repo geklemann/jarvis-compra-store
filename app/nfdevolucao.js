@@ -13,8 +13,8 @@ const st={rows:null,cand:[],carregando:false,auto:false,filtro:'abertas'};
 window.Reiniciar?.registrar(st,['filtro']); // estado de tela: volta ao original ao clicar no menu
 const ST={rascunho:['Rascunho','info'],emitida:['Enviada · aguardando SEFAZ','warn'],autorizada:['Autorizada','ok'],erro:['Rejeitada / erro','bad'],descartada:['Descartada','']};
 const amb=()=>window.Parametros?.cfg?.().ambiente||'homologacao';
-const podeEmitir=()=>['owner','member','financeiro'].includes(window.Cloud?.role||'owner');
-const podePreparar=()=>['owner','member','financeiro','atendimento','estoque'].includes(window.Cloud?.role||'owner');
+const podeEmitir=()=>(window.Acesso?window.Acesso.permite(['owner','member','financeiro'],['financeiro:w']):['owner','member','financeiro'].includes(window.Cloud?.role||'owner'));
+const podePreparar=()=>(window.Acesso?window.Acesso.permite(['owner','member','financeiro','atendimento','estoque'],['vendas:w','estoque:w']):['owner','member','financeiro','atendimento','estoque'].includes(window.Cloud?.role||'owner'));
 async function fn(action,body){const r=await Cloud.client.functions.invoke('integrations',{body:{workspace_id:Cloud.ws,action,...body}});if(r.error){let msg=r.error.message;try{msg=(await r.error.context.json()).error||msg}catch{}throw Error(msg)}return r.data}
 
 async function carregar(){if(st.carregando||!window.Cloud?.client)return;st.carregando=true;

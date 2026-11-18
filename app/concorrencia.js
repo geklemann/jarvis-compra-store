@@ -12,7 +12,7 @@ window.Reiniciar?.registrar(st,['filtro','busca','sel']); // estado de tela: vol
 const SIT={perdendo:['Perdendo a compra','bad'],mais_caro:['Mais caro','bad'],compartilhando:['Dividindo a compra','warn'],ganhando:['Ganhando a compra','ok'],mais_barato:['Mais barato','ok'],listado:['Sem disputa','info'],sozinho:['Sem concorrente','info'],sem_catalogo:['Fora do catálogo','']};
 const FIL={atencao:['Pede atenção',x=>['perdendo','mais_caro','compartilhando'].includes(x.situacao)],ok:['Na frente',x=>['ganhando','mais_barato'].includes(x.situacao)],todos:['Com concorrentes',x=>x.concorrentes>0],sem:['Sem comparação',x=>['sozinho','sem_catalogo','listado'].includes(x.situacao)&&!x.concorrentes]};
 const p1=v=>v==null?'—':(v*100).toFixed(1).replace('.',',')+'%';
-const podeAlterar=()=>['owner','member','financeiro'].includes(window.Cloud?.role);
+const podeAlterar=()=>!!window.Cloud?.role&&(window.Acesso?window.Acesso.permite(['owner','member','financeiro'],['precos:w']):['owner','member','financeiro'].includes(window.Cloud.role));
 // Novo preço pela regra escolhida: igualar ao menor concorrente (1 centavo abaixo), preço para ganhar a compra (catálogo),
 // ajuste em % (−5 baixa 5%, +3 sobe 3%) ou preço fixo. null = a regra não se aplica a este anúncio.
 const REGRAS={igualar:'Igualar ao menor concorrente (R$ 0,01 abaixo)',ganhar:'Preço para ganhar a compra (catálogo)',pct:'Ajustar em % (ex.: −5 ou +3)',fixo:'Preço fixo'};

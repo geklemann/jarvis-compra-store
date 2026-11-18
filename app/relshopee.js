@@ -24,7 +24,7 @@ const dBR=d=>d?d.slice(0,10).split('-').reverse().join('/'):'';
 const MES=['jan','fev','mar','abr','mai','jun','jul','ago','set','out','nov','dez'];
 const mesNome=k=>`${MES[Number(k.slice(5,7))-1]}-${k.slice(0,4)}`;
 const redesenhar=()=>{if(page===PAG)render()};
-const pode=()=>['owner','member','financeiro','contador'].includes(window.Cloud?.role);
+const pode=()=>!!window.Cloud?.role&&(window.Acesso?window.Acesso.permite(['owner','member','financeiro','contador'],['financeiro:r']):['owner','member','financeiro','contador'].includes(window.Cloud.role));
 async function fn(body){const r=await Cloud.client.functions.invoke('integrations',{body:{workspace_id:Cloud.ws,action:PLAT[platDe(body.tipo)].acao,...body}});if(r.error){let msg=r.error.message;try{msg=(await r.error.context.json()).error||msg}catch{}throw Error(msg)}return r.data}
 
 async function gerar(tipo){if(st.rodando)return toast('Espere a busca em andamento terminar.');if(!st.de||!st.ate||st.de>st.ate)return toast('Informe o período: de / até.');

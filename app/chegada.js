@@ -15,7 +15,7 @@ const codigoDoDia=(d=hoje())=>'CHEG-'+String(d).slice(0,10).replace(/-/g,'');
 /** id determinístico do movimento: chegada + produto + código do clique (gerado ao escolher o produto). */
 const idEntrada=(codigo,sku,nonce)=>`cheg:${codigo}:${String(sku).trim()}:${nonce}`;
 const novoNonce=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,6);
-const podeLancar=()=>['owner','member','estoque'].includes(window.Cloud?.role||'owner');
+const podeLancar=()=>(window.Acesso?window.Acesso.permite(['owner','member','estoque'],['estoque:w']):['owner','member','estoque'].includes(window.Cloud?.role||'owner'));
 const nuvem=()=>!!(window.Cloud?.client&&window.Cloud?.ws);
 async function fn(action,body){const r=await Cloud.client.functions.invoke('integrations',{body:{workspace_id:Cloud.ws,action,...body}});if(r.error){let msg=r.error.message;try{msg=(await r.error.context.json()).error||msg}catch{}throw Error(msg)}return r.data}
 

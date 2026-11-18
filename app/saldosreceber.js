@@ -19,8 +19,8 @@ const dataPos=()=>ui.data||periodo()[1];
 const R=v=>money(M.r2(v)),dBR=M.dBR;
 const sinal=v=>Math.abs(v)<0.005?'<span class="sr-zero">—</span>':R(v);
 const curto=v=>{const a=Math.abs(v),s=v<0?'−':'';return a>=1e6?`${s}${(a/1e6).toLocaleString('pt-BR',{maximumFractionDigits:1})} mi`:a>=1e3?`${s}${(a/1e3).toLocaleString('pt-BR',{maximumFractionDigits:a>=1e4?0:1})} mil`:`${s}${Math.round(a)}`};
-const pode=()=>!window.Cloud?.role||['owner','member','financeiro','contador'].includes(window.Cloud.role);
-const podeConsultar=()=>!!window.Cloud?.ws&&['owner','member','financeiro','contador'].includes(window.Cloud?.role);
+const pode=()=>!window.Cloud?.role||(window.Acesso?window.Acesso.permite(['owner','member','financeiro','contador'],['financeiro:r']):['owner','member','financeiro','contador'].includes(window.Cloud.role));
+const podeConsultar=()=>!!window.Cloud?.ws&&!!window.Cloud?.role&&(window.Acesso?window.Acesso.permite(['owner','member','financeiro','contador'],['financeiro:r']):['owner','member','financeiro','contador'].includes(window.Cloud.role));
 const demo=()=>!!window.JARVIS_DEMO;
 const redesenhar=()=>{if(page===PAG)render()};
 // Cores das plataformas no gráfico (paleta categórica conferida para os dois temas; a cor segue a plataforma).

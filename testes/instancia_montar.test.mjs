@@ -15,7 +15,7 @@ import os from 'node:os';
 import path from 'node:path';
 import vm from 'node:vm';
 import { fileURLToPath } from 'node:url';
-import { montarInstancia, idsDasInstancias, localizar, referenciasDoHtml, conferirBlocoAutoria, SIMPLES_PERMITIDOS } from '../ops/instancia/nucleo.mjs';
+import { montarInstancia, idsDasInstancias, localizar, referenciasDoHtml, conferirBlocoAutoria, SIMPLES_PERMITIDOS, DE_FORA_PERMITIDOS } from '../ops/instancia/nucleo.mjs';
 import { conferirSite, IMPRESSAO } from '../ops/instancia/autoria.mjs';
 
 const RAIZ = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -41,10 +41,12 @@ const jwt = (ref) => `eyJhbGciOiJIUzI1NiJ9.${Buffer.from(JSON.stringify({ iss: '
 
 function conferirSoEcommerce(dir) {
   const arqs = todos(dir);
-  const proibidos = arqs.filter((f) => /^(escritorio|normas|reforma|auditor|academia|site|ajuda|planos|contato|ecommerce|erp|sobre|recursos|parceiros|contabilidade|reforma-tributaria|normas-contabeis)\//.test(f)
-    || (f.startsWith('simples/') && !SIMPLES_PERMITIDOS.includes(f)) || ['CNAME', '.nojekyll', 'privacidade.html', 'termos.html', 'sitemap.xml'].includes(f));
+  // De fora das pastas do E-Commerce, só os arquivos um a um de DE_FORA_PERMITIDOS (os 2 do ponto e a senha vazada).
+  const proibidos = arqs.filter((f) => !DE_FORA_PERMITIDOS.includes(f) && (/^(escritorio|normas|reforma|auditor|academia|site|ajuda|planos|contato|ecommerce|erp|sobre|recursos|parceiros|contabilidade|reforma-tributaria|normas-contabeis)\//.test(f)
+    || f.startsWith('simples/') || ['CNAME', '.nojekyll', 'privacidade.html', 'termos.html', 'sitemap.xml'].includes(f)));
   assert.deepEqual(proibidos, [], 'só arquivos do E-Commerce');
   for (const f of SIMPLES_PERMITIDOS) assert.ok(arqs.includes(f), `${f} (o ponto importa)`);
+  assert.ok(arqs.includes('escritorio/motor/senhas_vazadas.js'), 'a conferência de senha vazada (cadastro e troca de senha)');
   for (const f of ['app/index.html', 'cliente.html', 'ponto.html', 'ponto.webmanifest', 'manifest.webmanifest', 'sw.js', 'config.js', 'autoria.js', 'autoria-classico.js', 'vendor/supabase.js', 'vendor/xlsx.full.min.js', 'vendor/pdf.mjs', 'vendor/pdf.worker.mjs', 'brand/jarvis-192.png', 'index.html', 'robots.txt', '_headers', '_redirects']) assert.ok(arqs.includes(f), f);
   for (const f of arqs) {
     const b = fs.readFileSync(path.join(dir, f));
