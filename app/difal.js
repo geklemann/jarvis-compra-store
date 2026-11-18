@@ -35,7 +35,7 @@ const opcPag=()=>({modo:st.pag,data:st.pag==='fixa'?st.pagData:null});
 const fcfg=()=>window.Parametros?.cfg?.()||db.gerencial?.fiscal||{};
 const duf=()=>fcfg().difal_uf||{};
 const salvarFiscal=n=>{db.gerencial={...(db.gerencial||{}),fiscal:{...(db.gerencial?.fiscal||{}),...n}};save()};
-const pode=()=>['owner','member','financeiro'].includes(window.Cloud?.role||'owner');
+const pode=()=>(window.Acesso?window.Acesso.permite(['owner','member','financeiro'],['financeiro:w']):['owner','member','financeiro'].includes(window.Cloud?.role||'owner'));
 async function gnre(action,body={}){const r=await Cloud.client.functions.invoke('gnre',{body:{workspace_id:Cloud.ws,action,...body}});if(r.error){let msg=r.error.message;try{msg=(await r.error.context.json()).error||msg}catch{}throw Error(msg)}return r.data}
 // Depois do envio: consulta o portal em intervalos crescentes (10 s até 5 min) enquanto os lotes enviados estiverem
 // "em processamento". Lote que o portal devolve com "erro no processamento, envie novamente" (404, sem nenhuma guia

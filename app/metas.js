@@ -18,7 +18,7 @@ const somaMes=(m,n)=>{const [a,b]=m.split('-').map(Number),d=new Date(a,b-1+n,1,
 const nomeMes=m=>{const [a,b]=m.split('-').map(Number);return new Date(a,b-1,1,12).toLocaleDateString('pt-BR',{month:'long',year:'numeric'})};
 const pc=v=>v==null?'—':(v*100).toFixed(0)+'%';
 const fmt=(ind,v)=>v==null?'—':IND[ind].u==='%'?Number(v).toFixed(1).replace('.',',')+'%':money(v);
-const podeEditar=()=>!window.Cloud?.ws||['owner','member','financeiro'].includes(window.Cloud.role);
+const podeEditar=()=>!window.Cloud?.ws||(window.Acesso?window.Acesso.permite(['owner','member','financeiro'],['financeiro:w']):['owner','member','financeiro'].includes(window.Cloud.role));
 
 /** Fração do mês já decorrida em `agora` (mês passado = 1, mês futuro = 0). Conta as horas do dia de hoje. */
 function fracao(m,agora=new Date()){const atual=mesDe(agora);if(m<atual)return 1;if(m>atual)return 0;

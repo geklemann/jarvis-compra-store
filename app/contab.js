@@ -102,7 +102,21 @@ function contas(){const m=new Map(PLANO.map(([c,n,t])=>[c,{c,n,t}]));for(const u
  for(const a of db.bankAccounts||[]){const cod=a.tipo==='aplicacao'?`1.1.02.${String(j++).padStart(2,'0')}`:`1.1.01.${String(i++).padStart(2,'0')}`;m.set(cod,{c:cod,n:a.nome,t:'A',banco:a.id})}
  // Personalização do plano (gerencial.plano): nomes, contas novas e contas removidas.
  const p=db.gerencial?.plano||{};for(const [c,n] of Object.entries(p.nomes||{}))if(m.has(c))m.get(c).n=n;for(const [c,x] of Object.entries(p.novas||{}))m.set(c,{c,n:x.n,t:x.t||'D',nova:true});for(const c of p.removidas||[])if(!m.get(c)?.banco)m.delete(c);return m}
-function diario(){const posEstoque=Math.round((window.Estoque?.lista?.()||[]).filter(p=>!p.ignorar&&p.formato!=='V'&&Number(p.saldo)>0&&Number(p.custo)>0).reduce((s,p)=>s+Number(p.saldo)*Number(p.custo),0)*100)/100;const k=[posEstoque,db.gerencial?.contabil?.custo_cmv,JSON.stringify(db.gerencial?.fiscal||{}),(db.accLines||[]).length,(window.VendaDireta?.vendas?.()||[]).length,(window.VendaDireta?.titulos?.()||[]).filter(r=>r.status==='recebido').length,provisaoOn(),db.gerencial?.contabil?.aliq_efetiva,JSON.stringify(db.gerencial?.contabil?.mapa||{}),JSON.stringify(db.gerencial?.plano||{}),db.orders.length,(db.bankTx||[]).length,(db.payables||[]).length,(db.purchases||[]).length,(db.bankAccounts||[]).length,(window.Estoque?.lista?.()||[]).length].join('|');if(cache?.k===k)return cache.v;
+// Impressão digital do que o diário lê e que muda NO LUGAR, sem mudar a quantidade de linhas: conciliar o extrato,
+// pagar ou editar um título, a tarifa, o frete ou os itens de um pedido, o custo de um produto, uma nota de entrada. Junto
+// com a identidade das listas (a nuvem troca o db inteiro na atualização em segundo plano), evita o diário velho: antes a
+// chave era só a quantidade de linhas, e os números da Contabilidade não mudavam até recarregar a página.
+function digital(){let h=0;const n=v=>{h=(Math.imul(h,31)+Math.round((Number(v)||0)*100))|0},t=x=>{x=x==null?'':typeof x==='string'?x:JSON.stringify(x);for(let i=0;i<x.length;i++)h=(Math.imul(h,31)+x.charCodeAt(i))|0;h=(Math.imul(h,31)+7)|0};
+ // Pedidos: só os números que se editam no lugar (a sincronização troca o db inteiro, e a identidade das listas pega isso).
+ for(const o of db.orders){n(o.gross);n(o.fee);n(o.shipping);const it=o.items;if(it){n(it.length);for(let i=0;i<it.length;i++)n(it[i].qty)}}
+ for(const x of db.bankTx||[]){t(x.status);t(x.data);n(x.valor);t(x.contaId);t(x.categoria);t(x.origem);t(x.vinculo)}
+ for(const p of db.payables||[]){t(p.status);t(p.origem);t(p.emissao);t(p.vencimento);t(p.pagoEm);t(p.categoria);n(p.valor);n(p.juros);n(p.desconto);n(p.valorPago)}
+ for(const p of db.purchases||[]){t(p.tipo);t(p.emissao);t(p.situacao);n(p.valor);n((p.itens||[]).length)}
+ for(const p of db.products||[])n(p.custo);for(const a of db.bankAccounts||[]){t(a.tipo);t(a.dataSaldoInicial);n(a.saldoInicial)}
+ for(const v of window.VendaDireta?.vendas?.()||[]){t(v.status);t(v.emissao);n(v.total)}for(const r of window.VendaDireta?.titulos?.()||[]){t(r.status);t(r.recebido_em);n(r.valor_recebido)}
+ for(const p of window.Estoque?.lista?.()||[]){n(p.custo);t(p.origem)}return h}
+const listas=()=>[db,db.orders,db.bankTx,db.payables,db.purchases,db.products,db.bankAccounts,db.accLines];
+function diario(){const posEstoque=Math.round((window.Estoque?.lista?.()||[]).filter(p=>!p.ignorar&&p.formato!=='V'&&Number(p.saldo)>0&&Number(p.custo)>0).reduce((s,p)=>s+Number(p.saldo)*Number(p.custo),0)*100)/100;const k=[posEstoque,db.gerencial?.contabil?.custo_cmv,JSON.stringify(db.gerencial?.fiscal||{}),(db.accLines||[]).length,(window.VendaDireta?.vendas?.()||[]).length,(window.VendaDireta?.titulos?.()||[]).filter(r=>r.status==='recebido').length,provisaoOn(),db.gerencial?.contabil?.aliq_efetiva,JSON.stringify(db.gerencial?.contabil?.mapa||{}),JSON.stringify(db.gerencial?.plano||{}),db.orders.length,(db.bankTx||[]).length,(db.payables||[]).length,(db.purchases||[]).length,(db.bankAccounts||[]).length,(window.Estoque?.lista?.()||[]).length,digital()].join('|'),ls=listas();if(cache?.k===k&&cache.ls.every((x,i)=>x===ls[i]))return cache.v;
  const plano=contas(),banco=new Map([...plano.values()].filter(x=>x.banco).map(x=>[x.banco,x.c])),L=[];
  const lanc=(d,hist,orig,linhas)=>{linhas=linhas.filter(([,v])=>Math.abs(v)>=0.005);if(linhas.length)L.push({d,hist,orig,l:linhas})}; // l: [conta, valor>0 débito / <0 crédito]
  const par=(d,hist,orig,deb,cred,v)=>{v=Math.round(v*100)/100;if(!v)return;if(v<0){[deb,cred]=[cred,deb];v=-v}lanc(d,hist,orig,[[deb,v],[cred,-v]])};
@@ -202,7 +216,7 @@ function diario(){const posEstoque=Math.round((window.Estoque?.lista?.()||[]).fi
  // (saldo × custo do Bling), menos as entradas e mais as saídas lançadas até hoje, é o saldo de abertura do estoque.
  if(posEstoque>0&&db.gerencial?.contabil?.estoque_abertura!==false&&L.length){const hoje=new Date().toLocaleDateString('sv-SE'),d0=L.reduce((m,e)=>e.d<m?e.d:m,hoje);let mov=0;for(const e of L)if(e.d<=hoje)for(const [c,v] of e.l)if(c==='1.1.04')mov+=v;
   const ab=Math.round((posEstoque-mov)*100)/100;if(ab>0)par(d0,`Estoque de abertura (implantação) · posição de estoque de hoje (${money(posEstoque)}) menos as entradas e mais as saídas lançadas desde então`,{tipo:'abertura',id:'estoque'},'1.1.04','3.9.01',ab)}
- L.sort((a,b)=>a.d.localeCompare(b.d));cache={k,v:{L,plano,semCusto}};return cache.v}
+ L.sort((a,b)=>a.d.localeCompare(b.d));cache={k,ls,v:{L,plano,semCusto}};return cache.v}
 
 // ─────────────── Saldos ───────────────
 function saldos(ate,desde){const {L,plano}=diario(),s=new Map();const add=(c,campo,v)=>{const parts=c.split('.');for(let i=1;i<=parts.length;i++){const k=parts.slice(0,i).join('.');const x=s.get(k)||{ant:0,deb:0,cred:0};x[campo]+=v;s.set(k,x)}};
@@ -259,7 +273,9 @@ function razao(c){const {L,plano}=diario(),{ini,fim:f}=periodo();let saldo=0;con
  <div class="modalfoot"><button data-action="close">Fechar</button></div>`)}
 
 // Conferência: DRE automática × DRE do balancete do escritório, mês a mês, com a diferença de cada linha.
-function conferencia(){const meses=[...new Set(db.orders.map(o=>o.date.slice(0,7)))].sort().slice(-7).filter(m=>m<=new Date().toISOString().slice(0,7));
+// Os 7 meses (com venda) que terminam na competência do topo: trocar o mês muda a conferência (antes eram sempre os 7
+// últimos meses, e o seletor não fazia efeito nesta aba).
+function conferencia(){const meses=[...new Set([...db.orders.map(o=>o.date.slice(0,7)),month])].filter(m=>m<=month).sort().slice(-7);
  const aut=m=>{const [y,mm]=m.split('-').map(Number),{s}=saldos(new Date(y,mm,0).toLocaleDateString('sv-SE'),m+'-01'),mv=c=>{const x=s.get(c);return x?x.deb-x.cred:0};const rb=-mv('4.1'),ded=mv('4.2'),cmv=mv('5.1'),com=mv('6.1'),out=mv('6.2')+mv('6.3')+mv('6.4')+mv('6.9');return {rb,ded,cmv,com,out,op:rb-ded-cmv-com-out}};
  const esc_=m=>{try{const d=window.Gestao?.dreMes?.(m);if(d?.fonte!=='balancete')return null;const v=d.v;return {rb:v.receita||0,ded:-(v.impostos||0)-(v.devolucoes||0),cmv:-(v.cmv||0),com:-(v.comerciais||0),out:-(v.trabalhistas||0)-(v.administrativas||0)-(v.outras||0),op:v['=ebitda']||0}}catch{return null}};
  const L=[['rb','Receita bruta'],['ded','Deduções e tributos'],['cmv','CMV'],['com','Despesas comerciais (tarifas, fretes, marketing)'],['out','Demais despesas operacionais'],['op','Resultado operacional (EBITDA)']];
@@ -281,7 +297,7 @@ function view(){const abas=[['balancete','Balancete'],['dre','DRE'],['balanco','
 // se nunca tiveram lançamento, removidas; contas novas (subcontas) podem ser criadas, editadas e removidas enquanto
 // estiverem sem lançamentos. As categorias do financeiro escolhem em qual conta caem. Tudo fica em gerencial.plano.
 const TIPOS={A:'Ativo',P:'Passivo / PL',R:'Receita',D:'Custo / despesa'};
-const podePlano=()=>['owner','member','financeiro','contador'].includes(window.Cloud?.role||'owner');
+const podePlano=()=>(window.Acesso?window.Acesso.permite(['owner','member','financeiro','contador'],['contabil:w']):['owner','member','financeiro','contador'].includes(window.Cloud?.role||'owner'));
 const cfgPlano=()=>{const p=db.gerencial?.plano||{};return {novas:p.novas||{},nomes:p.nomes||{},removidas:p.removidas||[]}};
 function salvarPlano(p,txt,det){db.gerencial={...(db.gerencial||{}),plano:p};cache=null;audit(txt,det);save();render()}
 function usoContas(){const {L}=diario(),u=new Map();for(const e of L)for(const [c] of e.l){const parts=c.split('.');for(let i=1;i<=parts.length;i++){const k=parts.slice(0,i).join('.');u.set(k,(u.get(k)||0)+1)}}return u}

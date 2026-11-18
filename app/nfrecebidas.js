@@ -8,7 +8,7 @@ window.Reiniciar?.registrar(ui,['filtro','busca']); // estado de tela: volta ao 
 const MAN={ciencia:['Ciência','info'],confirmacao:['Confirmada','ok'],desconhecimento:['Desconhecida','bad'],nao_realizada:['Não realizada','bad']};
 const dBR=d=>d?new Date(d).toLocaleDateString('pt-BR'):'—';
 const fmtDoc=s=>{const d=String(s||'').replace(/\D/g,'');return d.length===14?d.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/,'$1.$2.$3/$4-$5'):d};
-const pode=()=>['owner','member','financeiro','contador'].includes(window.Cloud?.role||'owner');
+const pode=()=>(window.Acesso?window.Acesso.permite(['owner','member','financeiro','contador'],['financeiro:r']):['owner','member','financeiro','contador'].includes(window.Cloud?.role||'owner'));
 async function fn(action,body){const r=await Cloud.client.functions.invoke('integrations',{body:{workspace_id:Cloud.ws,action,...body}});if(r.error){let msg=r.error.message;try{msg=(await r.error.context.json()).error||msg}catch{}throw Error(msg)}return r.data}
 async function carregar(){if(st.carregando||!window.Cloud?.ws)return;st.carregando=true;try{const {data,error}=await Cloud.client.from('nfe_recebidas').select('*').eq('workspace_id',Cloud.ws).order('emissao',{ascending:false}).limit(1000);if(error)throw error;st.notas=data||[];st.erro=''}catch(e){st.erro=e.message;st.notas=st.notas||[]}st.carregando=false;if(page==='nfrecebidas'&&!document.querySelector('.modalback'))render()}
 const noBling=n=>(db.purchases||[]).some(p=>String(p.chave||'').replace(/\D/g,'')===n.chave);

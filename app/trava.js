@@ -10,8 +10,8 @@ Object.assign(paths,{trava:'M6 11V8a6 6 0 0 1 12 0v3 M5 11h14v10H5z M12 15v2'});
 const nf=(v,d=0)=>Number(v||0).toLocaleString('pt-BR',{maximumFractionDigits:d});
 const quando=t=>t?new Date(t).toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}):'—';
 const linkML=id=>`https://produto.mercadolivre.com.br/${String(id).replace(/^MLB/,'MLB-')}`;
-const podeVer=()=>['owner','member','estoque','vendas','atendimento','financeiro'].includes(window.Cloud?.role||'owner');
-const podeLigar=()=>['owner','member'].includes(window.Cloud?.role||'owner');
+const podeVer=()=>(window.Acesso?window.Acesso.permite(['owner','member','estoque','vendas','atendimento','financeiro'],['estoque:w','vendas:w']):['owner','member','estoque','vendas','atendimento','financeiro'].includes(window.Cloud?.role||'owner'));
+const podeLigar=()=>(window.Acesso?window.Acesso.permite(['owner','member'],['estoque:w+financeiro:w']):['owner','member'].includes(window.Cloud?.role||'owner'));
 const nuvem=()=>!!(window.Cloud?.client&&window.Cloud?.ws);
 async function fn(action,body){const r=await Cloud.client.functions.invoke('integrations',{body:{workspace_id:Cloud.ws,action,...body}});if(r.error){let msg=r.error.message;try{msg=(await r.error.context.json()).error||msg}catch{}throw Error(msg)}return r.data}
 const st={dados:null,carregando:false,erro:'',verificando:false,ws:null};

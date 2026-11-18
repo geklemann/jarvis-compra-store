@@ -15,7 +15,7 @@ const STATUS={autorizado:['Autorizada','ok'],processando_autorizacao:['Processan
 const dig=s=>String(s||'').replace(/\D/g,'');
 const fmtDoc=s=>{const d=dig(s);return d.length===14?d.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/,'$1.$2.$3/$4-$5'):d.length===11?d.replace(/^(\d{3})(\d{3})(\d{3})(\d{2})$/,'$1.$2.$3-$4'):s||''};
 const num=v=>Number(String(v??'').replace(/\./g,'').replace(',','.'))||0;
-const pode=()=>['owner','member','financeiro'].includes(window.Cloud?.role||'owner');
+const pode=()=>(window.Acesso?window.Acesso.permite(['owner','member','financeiro'],['financeiro:w']):['owner','member','financeiro'].includes(window.Cloud?.role||'owner'));
 async function fn(action,body){const r=await Cloud.client.functions.invoke('integrations',{body:{workspace_id:Cloud.ws,action,...body}});if(r.error){let msg=r.error.message;try{msg=(await r.error.context.json()).error||msg}catch{}throw Error(msg)}return r.data}
 const nf={origem:'avulsa',pedido:'',dest:{doc:'',nome:'',ie:'',email:'',cep:'',logradouro:'',numero:'',complemento:'',bairro:'',municipio:'',uf:'SC'},itens:[],frete:'',desconto:'',pagamento:'17',presenca:'2',obs:'',sim:null,simErro:'',simulando:false,conf:false,prods:null,status:null,notas:null,filtro:'todas',busca:'',amb:''};
 async function carregar(){if(!window.Cloud?.ws||nf.carregando)return;nf.carregando=true;

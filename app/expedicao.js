@@ -7,8 +7,8 @@
 Object.assign(paths,{tag:'M3 12V4h8l10 10-8 8z M7.5 7.5h.01',print:paths.print||'M6 9V3h12v6 M6 18H4v-7h16v7h-2 M6 14h12v7H6z'});
 const nf=(v,d=0)=>Number(v||0).toLocaleString('pt-BR',{maximumFractionDigits:d});
 async function fn(action,body){const r=await Cloud.client.functions.invoke('integrations',{body:{workspace_id:Cloud.ws,action,...body}});if(r.error){let msg=r.error.message;try{msg=(await r.error.context.json()).error||msg}catch{}throw Error(msg)}return r.data}
-const podeLancar=()=>['owner','member','estoque'].includes(window.Cloud?.role||'owner');
-const podeEtiqueta=()=>['owner','member','estoque','atendimento'].includes(window.Cloud?.role||'owner');
+const podeLancar=()=>(window.Acesso?window.Acesso.permite(['owner','member','estoque'],['estoque:w']):['owner','member','estoque'].includes(window.Cloud?.role||'owner'));
+const podeEtiqueta=()=>(window.Acesso?window.Acesso.permite(['owner','member','estoque','atendimento'],['estoque:w','vendas:w+estoque:r']):['owner','member','estoque','atendimento'].includes(window.Cloud?.role||'owner'));
 let depositos=null;
 const OPS={E:['Entrada','Soma ao saldo: compra sem nota, devolução que voltou para a prateleira, ajuste para mais.'],S:['Saída','Tira do saldo: avaria, perda, uso interno, brinde, ajuste para menos.'],B:['Balanço','Define o saldo exato do depósito: use depois de contar a prateleira.']};
 
