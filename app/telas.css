@@ -1039,3 +1039,6 @@ body.light .imp-mar{--mar-a:#bfe6f7;--mar-b:#8ccbe8;--terra:#e9e2cf;--rota:#0b6f
 .pmtab td{white-space:normal}
 .pmcontagrid>div{min-width:0}
 @media (max-width:560px){.pmwf td.num,.pmtab td.num{white-space:normal}.pmwf select{max-width:150px}.pmwf td,.pmwf th{padding:6px 4px!important}}
+
+/* Configurações › Parâmetros (web/parametros-tela.js): as tabelas rolam dentro do cartão, sem alargar a página no celular. */
+.pagrid .pfmain{grid-template-columns:minmax(0,1fr)}@media(max-width:900px){.pfgrid.pagrid{grid-template-columns:minmax(0,1fr)}}

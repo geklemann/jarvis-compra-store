@@ -47,7 +47,7 @@ const MODS=[
  {id:'orc',ic:'target',t:'Orçamento',grupos:[['Planejar',['orcvisao','orcpremissas','orcreceitas','orcdespesas','orcpessoal','orcinvest']],['Resultado',['orcdre','orccaixa','orcamento']]]},
  {id:'fis',ic:'receipt',t:'Fiscal',grupos:[['Notas fiscais',['nfemitir','nfnotas','nfdevolucao','nfrecebidas']],['Tributos',['difal']],['Regras',['parametros','nfconfig']]]},
  {id:'crm',ic:'heart',t:'CRM',grupos:[['Clientes',['crm','crmclientes']],['Vender mais',['crmacoes','crmfases','crmreguas']],['Produtos e regiões',['crmprodutos','crmgeo']]]},
- {id:'cad',ic:'folder',t:'Cadastros',grupos:[['Parceiros',['fornecedores']],['Financeiro',['cadcontas','categorias','centros']],['Produtos',['catalogo']],['Empresa',['dadosempresa','privacidade']]]},
+ {id:'cad',ic:'folder',t:'Cadastros',grupos:[['Parceiros',['fornecedores']],['Financeiro',['cadcontas','categorias','centros']],['Produtos',['catalogo']],['Vendas',['canais']],['Empresa',['dadosempresa','privacidade']]]},
  {id:'res',ic:'chart',t:'Resultado',grupos:[['Análises',['rentabilidade']],['Contabilidade',['contabauto','fechcontab','contabil','planocontas']]]},
  {id:'pre',ic:'tag',t:'Preços e margem',grupos:[['Montar o preço',['custoproduto','regrasvenda','formacao','margem']],['Agir',['promocao','concorrencia','anuncios']]]},
  {id:'pes',ic:'wallet',t:'Folha',grupos:[['Painel',['folhapainel']],['Cadastros',['pscolab','psprolabore']],['Folha de pagamento',['folha','psferias','psresc','psesocial']],['Ponto',['ponto']]]},
@@ -55,9 +55,9 @@ const MODS=[
 // Tela principal de cada módulo: abre ao clicar no nome do módulo no menu e fica no topo da lista dele.
 const VISAO={ini:'resumo',pes:'folhapainel',orc:'orcvisao',atd:'atendimento',ven:'dashboard',est:'estoque',fin:'fluxo',fis:'nfnotas',crm:'crm',cad:'catalogo',imp:'importacoes',res:'contabauto',pre:'formacao',rel:'relfin'};
 window.ERP_MENU={get MODS(){return MODS},get GERAL(){return GERAL},get VISAO(){return VISAO},estrutura:(...a)=>estrutura(...a),primeiraTela:(...a)=>primeiraTela(...a),grupoVisivel:k=>grupoVisivel(k),alternarGrupo:k=>alternarGrupo(k),telaNoMenu:id=>telaNoMenu(id),modNoMenu:m=>modNoMenu(m)};
-const GERAL=['equipe','cxequipe','ai','history','auditoria','erros','integridade','fontes','integracoes','lancamento','imports'];
+const GERAL=['equipe','cxequipe','ai','history','auditoria','erros','integridade','fontes','integracoes','ajustes','lancamento','imports'];
 for(const [id,t] of [['reconcile','Conciliação de vendas'],['pending','Pendências'],['closing','Fechamento de vendas'],['tesouraria','Bancos e saldos'],['fluxo','Fluxo de caixa'],['pagar','Contas a pagar'],['compras','Notas de entrada']]){const n=navItems.find(x=>x[0]===id);if(n)n[2]=t}
-const modDe=p=>p==='lancamento'?'fin':p==='integridade'||p==='fontes'||p==='erros'||p==='cxequipe'||p==='integracoes'||p==='central'||p==='bolso'?'ini':platforms[p]?'ven':MODS.find(m=>m.grupos.some(([,ids])=>ids.includes(p)))?.id;
+const modDe=p=>p==='lancamento'?'fin':p==='integridade'||p==='fontes'||p==='erros'||p==='cxequipe'||p==='integracoes'||p==='ajustes'||p==='central'||p==='bolso'?'ini':platforms[p]?'ven':MODS.find(m=>m.grupos.some(([,ids])=>ids.includes(p)))?.id;
 let modAtual=modDe(page)||'ini';
 // Grupos do menu ("módulo:grupo") começam fechados; abre sozinho só o grupo da tela atual. Clicar no título abre ou
 // fecha a lista e, ao abrir, fecha os outros grupos do mesmo módulo. grupoAberto: abertos pelo clique (some ao trocar de
@@ -158,6 +158,7 @@ document.addEventListener('click',e=>{const dm=e.target.closest('.dropmenu');con
   ${(window.Acesso?window.Acesso.permite(['owner','member'],['estoque:w+financeiro:w']):['owner','member'].includes(window.Cloud?.role||'owner'))?`<button class="dropitem" data-nav="cxequipe">${ico('smile',18)}<span><strong>Avaliação do Jarvis</strong><small>Notas e comentários da equipe sobre o sistema</small></span></button>`:''}
   ${window.Cloud?.role==='owner'?`<button class="dropitem" data-nav="erros">${ico('bug',18)}<span><strong>Central de erros</strong><small>Falhas na tela da equipe e no servidor</small></span>${window.CentralErros?.abertos?.()?`<em class="navcount">${window.CentralErros.abertos()}</em>`:''}</button>`:''}
   <button class="dropitem" data-nav="integracoes">${ico('plug',18)}<span><strong>Integrações</strong><small>ERP e marketplaces</small></span></button>
+  <button class="dropitem" data-nav="ajustes">${ico('sliders',18)}<span><strong>Parâmetros</strong><small>Metas, prazos, limites e regras que calibram os números</small></span></button>
   ${wss.length>1?wss.map(w=>`<button class="dropitem" data-erp-ws="${esc(w.id)}">${ico('folder',18)}<span><strong>${esc(w.name)}</strong><small>${w.id===Cloud.ws?'empresa aberta':'trocar para esta empresa'}</small></span></button>`).join(''):''}
   <button class="dropitem" data-erp-tema="1">${ico(db.theme==='light'?'moon':'sun',18)}<span><strong>Aparência</strong><small>Temas, cores e modo claro/escuro</small></span></button>
   <button class="dropitem" data-al="abrir">${ico('bell',18)}<span><strong>Alertas no celular</strong><small>Avisos de NF-e, reclamações, estoque e contas</small></span></button>

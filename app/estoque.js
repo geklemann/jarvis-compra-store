@@ -7,10 +7,12 @@
 (()=>{
 Object.assign(paths,{box:paths.box||'M3 7l9-4 9 4v10l-9 4-9-4z M3 7l9 4 9-4 M12 11v10',cart:'M3 4h2l2.4 11h11L21 7H6.2 M9 20h.01 M18 20h.01',
  truck:'M3 6h11v10H3z M14 10h4l3 3v3h-7 M7 19a2 2 0 1 0 0-4 2 2 0 0 0 0 4z M17 19a2 2 0 1 0 0-4 2 2 0 0 0 0 4z'});
-const st={modo:(()=>{try{return localStorage.getItem('eb_est_modo')||'galeria'}catch{return 'galeria'}})(),lista:[],carregado:false,carregando:false,erro:'',info:null,filtro:'todos',busca:'',abc:'',ordem:'status',pag:0,alvo:45,seguranca:7,prazoPadrao:20};
+const st={modo:(()=>{try{return localStorage.getItem('eb_est_modo')||'galeria'}catch{return 'galeria'}})(),lista:[],carregado:false,carregando:false,erro:'',info:null,filtro:'todos',busca:'',abc:'',ordem:'status',pag:0};
+// Parâmetros de reposição: da empresa (Configurações › Parâmetros › Estoque). Até 19/11/2026 ficavam só neste navegador
+// (eb_estoque_param): o valor antigo vai sozinho para a empresa na primeira leitura (web/parametros-base.js).
+const PE=()=>window.Parametros;
+Object.defineProperties(st,{alvo:{get:()=>PE().get('estoque.alvo'),enumerable:true},seguranca:{get:()=>PE().get('estoque.seguranca'),enumerable:true},prazoPadrao:{get:()=>PE().get('estoque.prazo'),enumerable:true}});
 window.Reiniciar?.registrar(st,['filtro','busca','abc','ordem','pag']); // estado de tela: volta ao original ao clicar no menu
-try{Object.assign(st,JSON.parse(localStorage.getItem('eb_estoque_param')||'{}'))}catch{}
-const salvarParam=()=>{try{localStorage.setItem('eb_estoque_param',JSON.stringify({alvo:st.alvo,seguranca:st.seguranca,prazoPadrao:st.prazoPadrao}))}catch{}};
 const hoje=()=>new Date().toLocaleDateString('sv-SE');
 const menosDias=n=>{const d=new Date();d.setDate(d.getDate()-n);return d.toLocaleDateString('sv-SE')};
 const nf=(v,d=0)=>Number(v||0).toLocaleString('pt-BR',{maximumFractionDigits:d,minimumFractionDigits:d});
@@ -27,34 +29,37 @@ let cache=null;
 // Quanto comprar: cobre o prazo de reposição + a cobertura alvo + o estoque de segurança, descontando o saldo e o que
 // já foi pedido ao fornecedor e ainda não chegou (senão a sugestão pediria de novo a mercadoria que está a caminho).
 const sugestao=({media,prazo,alvo,minimo,saldo,emPedido=0})=>Math.max(0,Math.ceil(media*(prazo+alvo)+minimo-saldo-emPedido));
-function base(){const vpc=window.Estoque2?.versao?.()||0;if(cache&&cache.n===db.orders.length&&cache.p===st.lista.length&&cache.pc===vpc)return cache.v;
+function base(){const vpc=window.Estoque2?.versao?.()||0,pv=PE().versao();if(cache&&cache.n===db.orders.length&&cache.p===st.lista.length&&cache.pc===vpc&&cache.pv===pv)return cache.v;
  const emAberto=window.Estoque2?.emAberto?.()||new Map();
- const d30=menosDias(30),d60=menosDias(60),d90=menosDias(90),d180=menosDias(180),vendas=new Map(),compras=new Map();
- const V=sku=>vendas.get(sku)||(vendas.set(sku,{q30:0,q60:0,q90:0,r90:0,q180:0,ultima:'',canais:{},semanas:new Array(12).fill(0)}),vendas.get(sku));
+ const PD=PE().get('estoque.parado_dias'),d30=menosDias(30),d60=menosDias(60),d90=menosDias(90),d180=menosDias(Math.max(180,PD)),dPar=menosDias(PD),vendas=new Map(),compras=new Map();
+ const V=sku=>vendas.get(sku)||(vendas.set(sku,{q30:0,q60:0,q90:0,r90:0,q180:0,qPar:0,ultima:'',canais:{},semanas:new Array(12).fill(0)}),vendas.get(sku));
  const sem0=new Date(hoje()+'T12:00:00');
- for(const o of db.orders){if(o.date<d180)continue;for(const it of o.items||[]){const sku=String(it.sku||'').trim();if(!sku)continue;const v=V(sku),q=Number(it.qty)||0;
-  v.q180+=q;if(o.date>=d90){v.q90+=q;v.r90+=q*(Number(it.price)||0)}if(o.date>=d60)v.q60+=q;if(o.date>=d30){v.q30+=q;v.canais[o.platform]=(v.canais[o.platform]||0)+q}if(o.date>v.ultima)v.ultima=o.date;
+ const dMin=d180,d180r=menosDias(180);
+ for(const o of db.orders){if(o.date<dMin)continue;for(const it of o.items||[]){const sku=String(it.sku||'').trim();if(!sku)continue;const v=V(sku),q=Number(it.qty)||0;
+  if(o.date>=d180r)v.q180+=q;if(o.date>=d90){v.q90+=q;v.r90+=q*(Number(it.price)||0)}if(o.date>=d60)v.q60+=q;if(o.date>=dPar)v.qPar+=q;if(o.date>=d30){v.q30+=q;v.canais[o.platform]=(v.canais[o.platform]||0)+q}if(o.date>v.ultima)v.ultima=o.date;
   const w=Math.floor((sem0-new Date(o.date+'T12:00:00'))/(7*864e5));if(w>=0&&w<12)v.semanas[11-w]+=q}}
  for(const n of db.purchases||[]){if(n.tipo&&n.tipo!=='compra')continue;for(const it of n.itens||[]){const sku=String(it.sku||'').trim();if(!sku)continue;const c=compras.get(sku)||{ultima:'',fornecedor:'',qtd:0,custo:0,n:0};
   c.n++;c.qtd+=Number(it.qtd)||0;if((n.emissao||'')>=c.ultima){c.ultima=n.emissao||'';c.fornecedor=n.fornecedor||'';c.custo=Number(it.valor)||c.custo}compras.set(sku,c)}}
  const custoPreco=new Map((db.products||[]).map(p=>[p.id,p.custo]));
- const linhas=st.lista.filter(p=>!p.ignorar&&p.formato!=='V').map(p=>{const v=vendas.get(p.id)||{q30:0,q60:0,q90:0,r90:0,q180:0,ultima:'',canais:{},semanas:new Array(12).fill(0)},c=compras.get(p.id);
+ const EX=PE().get('estoque.excesso_x'),linhas=st.lista.filter(p=>!p.ignorar&&p.formato!=='V').map(p=>{const v=vendas.get(p.id)||{q30:0,q60:0,q90:0,r90:0,q180:0,qPar:0,ultima:'',canais:{},semanas:new Array(12).fill(0)},c=compras.get(p.id);
   // Ritmo: média ponderada (últimos 30 dias pesam o dobro) para reagir a tendência sem perder estabilidade.
   const media=(v.q30/30*2+v.q60/60)/3,saldo=Number(p.saldo)||0,custo=Number(p.custo)||Number(custoPreco.get(p.id))||c?.custo||0,cobertura=saldo<=0?0:media>0?saldo/media:Infinity; // saldo negativo (ERP) = sem estoque: cobertura 0, nunca negativa
   const prazo=p.prazo_reposicao??st.prazoPadrao,minimo=Number(p.minimo)||Math.ceil(media*st.seguranca),ponto=Math.ceil(media*prazo+minimo);
   const emPedido=emAberto.get(p.id)||0,sugerida=sugestao({media,prazo,alvo:st.alvo,minimo,saldo,emPedido});
-  let status='ok';if(saldo<=0&&v.q60>0)status='ruptura';else if(media>0&&saldo+emPedido<=ponto)status='comprar';else if(saldo>0&&v.q60===0)status='parado';else if(media>0&&cobertura>st.alvo*3)status='excesso';else if(saldo<=0)status='zerado';
+  let status='ok';if(saldo<=0&&v.q60>0)status='ruptura';else if(media>0&&saldo+emPedido<=ponto)status='comprar';else if(saldo>0&&v.qPar===0)status='parado';else if(media>0&&cobertura>st.alvo*EX)status='excesso';else if(saldo<=0)status='zerado';
   return {p,sku:p.id,nome:p.nome,saldo,custo,valor:Math.max(0,saldo)*custo,preco:Number(p.preco)||0,media,cobertura,prazo,minimo,ponto,sugerida,emPedido,status,v,c,fornecedor:p.fornecedor||c?.fornecedor||''}});
- // Curva ABC pela receita de 90 dias.
- const tot=linhas.reduce((s,l)=>s+l.v.r90,0);let acc=0;for(const l of [...linhas].sort((a,b)=>b.v.r90-a.v.r90)){acc+=l.v.r90;l.abc=!l.v.r90?'C':acc<=tot*.8?'A':acc<=tot*.95?'B':'C'}
- cache={n:db.orders.length,p:st.lista.length,pc:vpc,v:{linhas,vendas}};return cache.v}
+ // Curva ABC pela receita de 90 dias (a regra comum: Parametros.curvaABC, 80% e 95% no padrão).
+ PE().curvaABC(linhas,l=>l.v.r90);
+ cache={n:db.orders.length,p:st.lista.length,pc:vpc,pv,v:{linhas,vendas}};return cache.v}
 // Sugestão agrupada por fornecedor (um pedido de compra por fornecedor), maior valor primeiro.
 const SEM_FORN='Sem fornecedor definido';
 function gruposCompra(){const {linhas}=base(),l=linhas.filter(x=>['ruptura','comprar'].includes(x.status)&&x.sugerida>0),por=new Map();
  for(const x of l){const f=x.fornecedor||SEM_FORN;(por.get(f)||por.set(f,[]).get(f)).push(x)}
  return [...por].map(([f,it])=>({f,semForn:f===SEM_FORN,it:it.sort((a,b)=>a.cobertura-b.cobertura),total:it.reduce((s,x)=>s+x.sugerida*x.custo,0),
   itens:it.map(x=>({sku:x.sku,nome:x.nome,qtd:x.sugerida,custo:Math.round(x.custo*100)/100,recebido:0}))})).sort((a,b)=>b.total-a.total)}
-const STATUS={ruptura:['Ruptura','bad','Sem saldo e vendendo: venda perdida todo dia'],comprar:['Comprar','warn','Abaixo do ponto de pedido'],ok:['Saudável','ok','Cobertura dentro do alvo'],excesso:['Excesso','info','Mais de 3× a cobertura alvo'],parado:['Parado','','Com saldo e sem venda há 60 dias'],zerado:['Zerado','','Sem saldo e sem venda recente']};
+const STATUS0={ruptura:['Ruptura','bad','Sem saldo e vendendo: venda perdida todo dia'],comprar:['Comprar','warn','Abaixo do ponto de pedido'],ok:['Saudável','ok','Cobertura dentro do alvo'],excesso:['Excesso','info','Mais de 3× a cobertura alvo'],parado:['Parado','','Com saldo e sem venda há 60 dias'],zerado:['Zerado','','Sem saldo e sem venda recente']};
+// Os textos com os números dos parâmetros da empresa (excesso e parado).
+const STATUS=new Proxy(STATUS0,{get:(t,k)=>k==='excesso'?[...t.excesso.slice(0,2),`Mais de ${String(PE().get('estoque.excesso_x')).replace('.',',')}× a cobertura alvo`]:k==='parado'?[...t.parado.slice(0,2),`Com saldo e sem venda há ${PE().get('estoque.parado_dias')} dias`]:t[k]});
 const cob=l=>l.saldo<=0?(l.media?'0 d':'—'):l.cobertura===Infinity?'∞':l.media?`${nf(l.cobertura)} d`:'—';
 function spark(s){const m=Math.max(1,...s),W=84,H=22;return `<svg viewBox="0 0 ${W} ${H}" class="spark" aria-hidden="true"><polyline points="${s.map((x,i)=>`${i*(W/(s.length-1))},${H-2-(x/m)*(H-4)}`).join(' ')}"/></svg>`}
 
@@ -67,7 +72,7 @@ function posicaoView(){if(!window.Cloud?.ws)return '<div class="empty">Entre no 
  const q=normalized(st.busca);let l=linhas.filter(x=>(st.filtro==='todos'||x.status===st.filtro)&&(!st.abc||x.abc===st.abc)&&(!q||normalized(x.sku+' '+x.nome+' '+x.fornecedor).includes(q)));
  const ORD={status:(a,b)=>Object.keys(STATUS).indexOf(a.status)-Object.keys(STATUS).indexOf(b.status)||b.v.r90-a.v.r90,cobertura:(a,b)=>(a.cobertura===Infinity?1e9:a.cobertura)-(b.cobertura===Infinity?1e9:b.cobertura),valor:(a,b)=>b.valor-a.valor,vendas:(a,b)=>b.v.q30-a.v.q30,nome:(a,b)=>a.nome.localeCompare(b.nome)};l.sort(ORD[st.ordem]||ORD.status);
  const POR=60,pags=Math.max(1,Math.ceil(l.length/POR));st.pag=Math.min(st.pag,pags-1);
- return `<div class="grid kpis4">${kpi('todos','Valor em estoque (custo)',money(valor),`${nf(linhas.filter(x=>x.saldo>0).length)} SKUs com saldo · cobertura média ${nf(cobMedia)} dias`)}${kpi('ruptura','Ruptura',cont('ruptura'),perdaDia?`~${money(perdaDia)}/dia em vendas perdidas`:'Nenhum item vendendo sem saldo',cont('ruptura')?'red':'')}${kpi('comprar','Comprar agora',cont('comprar'),'Abaixo do ponto de pedido',cont('comprar')?'gold':'')}${kpi('parado','Parado (60 dias)',money(parado),`${cont('parado')} SKU(s) sem venda`)}</div>
+ return `<div class="grid kpis4">${kpi('todos','Valor em estoque (custo)',money(valor),`${nf(linhas.filter(x=>x.saldo>0).length)} SKUs com saldo · cobertura média ${nf(cobMedia)} dias`)}${kpi('ruptura','Ruptura',cont('ruptura'),perdaDia?`~${money(perdaDia)}/dia em vendas perdidas`:'Nenhum item vendendo sem saldo',cont('ruptura')?'red':'')}${kpi('comprar','Comprar agora',cont('comprar'),'Abaixo do ponto de pedido',cont('comprar')?'gold':'')}${kpi('parado',`Parado (${PE().get('estoque.parado_dias')} dias)`,money(parado),`${cont('parado')} SKU(s) sem venda`)}</div>
  <div class="crmbar"><div class="segtabs">${[['todos','Todos'],...Object.entries(STATUS).map(([k,[t]])=>[k,t])].map(([k,t])=>`<button class="${st.filtro===k?'active':''}" data-est-filtro="${k}">${t} <small>${k==='todos'?linhas.length:cont(k)}</small></button>`).join('')}</div>
   <div class="searchin">${icon('search')}<input type="search" id="estBusca" placeholder="SKU, produto ou fornecedor…" value="${esc(st.busca)}"></div>
   <select data-est="abc" aria-label="Curva ABC"><option value="">Curva ABC: todas</option>${['A','B','C'].map(x=>`<option ${st.abc===x?'selected':''}>${x}</option>`).join('')}</select>
@@ -110,7 +115,7 @@ function ficha(sku){const {linhas}=base(),x=linhas.find(l=>l.sku===sku);if(!x)re
  <div class="navlabel" style="margin:16px 0 8px">Movimentações (entradas por nota e vendas dos últimos 120 dias)</div>
  <div class="tablewrap" style="max-height:260px"><table><thead><tr><th>Data</th><th>Movimento</th><th>Referência</th><th class="num">Qtd.</th><th class="num">Unitário</th></tr></thead><tbody>${mov.slice(0,300).map(m=>`<tr><td>${dataBR(m.d)}</td><td>${esc(m.tipo)}</td><td class="caption">${esc(m.ref)}</td><td class="num ${m.q<0?'red':'green'}">${m.q>0?'+':''}${nf(m.q)}</td><td class="num">${money(m.v)}</td></tr>`).join('')||'<tr><td colspan="5" class="empty">Sem movimentos.</td></tr>'}</tbody></table></div>
  <div class="modalfoot"><button data-action="close">Fechar</button>${window.Kardex?`<button data-kx-sku="${esc(sku)}">${icon('kardex')} Movimentação completa</button>`:''}${p.bling_id&&window.Expedicao?.podeLancar()?`<button data-lc-abrir="${esc(sku)}">${icon('box')} Lançar estoque</button>`:''}<button class="primary" data-est-salvar="${esc(sku)}">${icon('check')} Salvar</button></div>`)}
-function parametros(){modal('Parâmetros de reposição',`<p class="caption" style="margin-top:-10px">Valem para todos os produtos que não têm valor próprio na ficha. Ficam salvos neste navegador.</p>
+function parametros(){modal('Parâmetros de reposição',`<p class="caption" style="margin-top:-10px">Valem para todos os produtos que não têm valor próprio na ficha. Ficam salvos na empresa (também em Configurações › Parâmetros › Estoque).</p>
  <div class="grid three"><div><label for="epAlvo">Cobertura alvo (dias)</label><input id="epAlvo" type="number" min="7" value="${st.alvo}"></div><div><label for="epSeg">Segurança (dias de venda)</label><input id="epSeg" type="number" min="0" value="${st.seguranca}"></div><div><label for="epPrazo">Prazo de reposição padrão</label><input id="epPrazo" type="number" min="0" value="${st.prazoPadrao}"></div></div>
  <div class="modalfoot"><button data-action="close">Cancelar</button><button class="primary" data-est="salvar-params">${icon('check')} Aplicar</button></div>`)}
 function csv(nome,cab,linhas){const txt=[cab,...linhas].map(l=>l.map(x=>`"${String(x??'').replace(/"/g,'""')}"`).join(';')).join('\n');const a=document.createElement('a');a.href=URL.createObjectURL(new Blob(['﻿'+txt],{type:'text/csv'}));a.download=nome;a.click()}
@@ -127,7 +132,7 @@ document.addEventListener('click',async e=>{const b=e.target.closest('[data-est]
  switch(d.est){
   case 'sync':b.disabled=true;b.innerHTML=`${icon('refresh')} Lendo o Bling…`;try{const r=await fn('estoque_sync',{});toast(`${r.produtos} produto(s) atualizados do Bling.`)}catch(x){toast(x.message)}st.carregado=false;await carregar();break;
   case 'params':parametros();break;
-  case 'salvar-params':st.alvo=Math.max(7,Number($('#epAlvo').value)||45);st.seguranca=Math.max(0,Number($('#epSeg').value)||0);st.prazoPadrao=Math.max(0,Number($('#epPrazo').value)||0);salvarParam();cache=null;closeModal();render();break;
+  case 'salvar-params':{const erro=[['estoque.alvo','#epAlvo'],['estoque.seguranca','#epSeg'],['estoque.prazo','#epPrazo']].map(([k,id])=>PE().set(k,$(id).value)).find(Boolean);if(erro){toast(erro);break}cache=null;closeModal();render();break}
   case 'csv':{const {linhas}=base();csv(`estoque-${hoje()}.csv`,['SKU','Produto','Situação','Saldo','Vendas 30d','Ritmo/dia','Cobertura (dias)','Comprar','Custo','Valor','ABC','Fornecedor'],linhas.map(x=>[x.sku,x.nome,STATUS[x.status][0],x.saldo,x.v.q30,x.media.toFixed(2).replace('.',','),x.cobertura===Infinity?'':Math.round(x.cobertura),x.sugerida,x.custo.toFixed(2).replace('.',','),x.valor.toFixed(2).replace('.',','),x.abc,x.fornecedor]));break}}
 });
 document.addEventListener('change',e=>{const s=e.target.closest('[data-est]');if(s&&s.tagName==='SELECT'){st[s.dataset.est]=s.value;st.pag=0;render()}});
@@ -138,21 +143,27 @@ addPage('estcompras','cart','Sugestão de compras',comprasView,'O que comprar, q
 // Faixas pelo tempo desde a última venda (até 180 dias de histórico). Mínimo (lucro líquido zero) e Piso (contribuição
 // zero) vêm da conta de Preços e margem (window.Preco) no canal que mais vende o SKU: os mesmos da Formação de preço.
 // A sugestão nunca fica abaixo do Mínimo; parado há mais de 180 dias pode ir até o Piso para liberar o dinheiro.
-const FAIXAS=[['f60','60 a 90 dias',0.10,'Promoção leve ou destaque no anúncio'],['f90','90 a 180 dias',0.20,'Promoção forte, kit com item que gira ou anúncio em outro canal'],['f180','Mais de 180 dias',0.35,'Liquidar até o Piso (contribuição zero); sem saída, negociar troca com o fornecedor ou dar baixa']];
+// Faixas e descontos: Configurações › Parâmetros › Estoque (60, 90 e 180 dias; 10%, 20% e 35% no padrão).
+const FAIXAS0=[['f60','60 a 90 dias',0.10,'Promoção leve ou destaque no anúncio'],['f90','90 a 180 dias',0.20,'Promoção forte, kit com item que gira ou anúncio em outro canal'],['f180','Mais de 180 dias',0.35,'Liquidar até o Piso (contribuição zero); sem saída, negociar troca com o fornecedor ou dar baixa']];
+let faixasK=null,faixasV=null;
+const FAIXAS=new Proxy(FAIXAS0,{get:(t,k)=>{const P=PE(),a=P.get('estoque.parado_dias'),b=P.get('estoque.faixa2_dias'),c=P.get('estoque.faixa3_dias'),key=[a,b,c,P.get('estoque.desc1'),P.get('estoque.desc2'),P.get('estoque.desc3')].join('|');
+ if(faixasK!==key){faixasK=key;faixasV=[[t[0][0],`${a} a ${b} dias`,P.get('estoque.desc1')/100,t[0][3]],[t[1][0],`${b} a ${c} dias`,P.get('estoque.desc2')/100,t[1][3]],[t[2][0],`Mais de ${c} dias`,P.get('estoque.desc3')/100,t[2][3]]]}
+ const v=faixasV[k];return typeof v==='function'?v.bind(faixasV):v}});
 // Último preço de venda de cada SKU (o preço do cadastro vindo do ERP de origem pode ser o custo).
 let ultPreco=null,ultN=-1;
 function precoVenda(sku){if(ultN!==db.orders.length){ultPreco=new Map();for(const o of db.orders)for(const it of o.items||[]){const k=String(it.sku||'').trim(),p=Number(it.price)||0;if(!k||!p)continue;const x=ultPreco.get(k);if(!x||o.date>x.d)ultPreco.set(k,{d:o.date,p})}ultN=db.orders.length}return ultPreco.get(String(sku).trim())?.p||0}
-function parado(){const {linhas}=base(),P=window.Preco,par=window.Margem?.parametros?.()||{tarifa:0.25,frete:0,aliq:0.1},carga=Math.min(0.9,par.tarifa+par.frete+par.aliq),dHoje=new Date(hoje()+'T12:00:00');
- const itens=linhas.filter(l=>l.status==='parado'&&l.saldo>0).map(l=>{const dias=l.v.ultima?Math.round((dHoje-new Date(l.v.ultima+'T12:00:00'))/864e5):null,fx=dias==null||dias>180?FAIXAS[2]:dias>90?FAIXAS[1]:FAIXAS[0];
-  const preco=precoVenda(l.sku),canal=P?.canalPrincipal?.(l.sku)||'Mercado Livre',ref=P?.precos?.(l.sku,canal)||null,piso=ref?.minimo||0,pisoContrib=ref?.piso||0,chao=fx===FAIXAS[2]?pisoContrib||piso:piso,sug=preco?Math.max(chao,preco*(1-fx[2])):chao;return {...l,preco,dias,fx,canal,piso,pisoContrib,sug,abaixo:preco&&piso&&preco<piso}}).sort((a,b)=>b.valor-a.valor);
- const excesso=linhas.filter(l=>l.status==='excesso').map(l=>{const sobra=Math.max(0,l.saldo-Math.ceil(l.media*st.alvo*3));return {...l,sobra,vSobra:sobra*l.custo}}).filter(l=>l.vSobra>0).sort((a,b)=>b.vSobra-a.vSobra);
+function parado(){const {linhas}=base(),P=window.Preco,par=window.Margem?.parametros?.()||{tarifa:PE().get('estoque.reserva_tarifa')/100,frete:0,aliq:PE().get('estoque.reserva_aliq')/100},carga=Math.min(0.9,par.tarifa+par.frete+par.aliq),dHoje=new Date(hoje()+'T12:00:00');
+ const f2=PE().get('estoque.faixa2_dias'),f3=PE().get('estoque.faixa3_dias');
+ const itens=linhas.filter(l=>l.status==='parado'&&l.saldo>0).map(l=>{const dias=l.v.ultima?Math.round((dHoje-new Date(l.v.ultima+'T12:00:00'))/864e5):null,fx=dias==null||dias>f3?FAIXAS[2]:dias>f2?FAIXAS[1]:FAIXAS[0];
+  const preco=precoVenda(l.sku),canal=P?.canalPrincipal?.(l.sku)||PE().get('precos.canal_reserva'),ref=P?.precos?.(l.sku,canal)||null,piso=ref?.minimo||0,pisoContrib=ref?.piso||0,chao=fx===FAIXAS[2]?pisoContrib||piso:piso,sug=preco?Math.max(chao,preco*(1-fx[2])):chao;return {...l,preco,dias,fx,canal,piso,pisoContrib,sug,abaixo:preco&&piso&&preco<piso}}).sort((a,b)=>b.valor-a.valor);
+ const excesso=linhas.filter(l=>l.status==='excesso').map(l=>{const sobra=Math.max(0,l.saldo-Math.ceil(l.media*st.alvo*PE().get('estoque.excesso_x')));return {...l,sobra,vSobra:sobra*l.custo}}).filter(l=>l.vSobra>0).sort((a,b)=>b.vSobra-a.vSobra);
  return {itens,excesso,par,carga}}
 function paradoView(){if(!window.Cloud?.ws)return '<div class="empty">Entre no portal para ver o estoque.</div>';if(!st.carregado){carregar();return '<div class="empty">Carregando produtos…</div>'}
  const {itens:itens0,excesso,carga}=parado(),itens=ordemGravidade(itens0),tot=itens.reduce((s,l)=>s+l.valor,0),porF=FAIXAS.map(f=>{const l=itens.filter(x=>x.fx===f);return {f,n:l.length,v:l.reduce((s,x)=>s+x.valor,0)}}),vEx=excesso.reduce((s,l)=>s+l.vSobra,0);
  const pc=v=>(v*100).toFixed(1).replace('.',',')+'%';
- return `<div class="grid kpis4"><div class="card kpi"><span class="kpil">Dinheiro parado</span><span class="kpiv ${tot?'red':''}">${money(tot)}</span><span class="kpis">${itens.length} SKU(s) sem venda há 60 dias ou mais (a custo)</span></div>
+ return `<div class="grid kpis4"><div class="card kpi"><span class="kpil">Dinheiro parado</span><span class="kpiv ${tot?'red':''}">${money(tot)}</span><span class="kpis">${itens.length} SKU(s) sem venda há ${PE().get('estoque.parado_dias')} dias ou mais (a custo)</span></div>
   ${porF.map(x=>`<div class="card kpi"><span class="kpil">${x.f[1]} sem venda</span><span class="kpiv">${money(x.v)}</span><span class="kpis">${x.n} SKU(s)</span></div>`).join('')}</div>
- <div class="notice"><strong>Como ler:</strong> o Mínimo (lucro líquido zero) cobre o custo do produto, o custo do canal que mais vende o item, os tributos, os anúncios e as despesas fixas: a mesma conta da Formação de preço (Preços e margem). A sugestão dá um desconto conforme o tempo parado, sem passar do Mínimo; parado há mais de 180 dias pode ir até o Piso (contribuição zero) para liberar o dinheiro. Excesso: além disso, ${money(vEx)} estão em estoque acima de 3× a cobertura alvo (${st.alvo} dias) de itens que ainda vendem.</div>
+ <div class="notice"><strong>Como ler:</strong> o Mínimo (lucro líquido zero) cobre o custo do produto, o custo do canal que mais vende o item, os tributos, os anúncios e as despesas fixas: a mesma conta da Formação de preço (Preços e margem). A sugestão dá um desconto conforme o tempo parado, sem passar do Mínimo; parado há mais de 180 dias pode ir até o Piso (contribuição zero) para liberar o dinheiro. Excesso: além disso, ${money(vEx)} estão em estoque acima de ${String(PE().get('estoque.excesso_x')).replace('.',',')}× a cobertura alvo (${st.alvo} dias) de itens que ainda vendem.</div>
  <div class="tabletop" style="margin-top:6px"><div><h2>Produtos parados</h2><p class="caption">Do parado há mais tempo para o mais recente (no empate, o maior valor primeiro). Clique para abrir a ficha com o kardex.</p></div><div class="row" style="gap:8px"><button class="small" data-nav="concorrencia">${icon('tag')} Ajustar preços no Mercado Livre</button><div class="segtabs estmodo"><button class="${st.modo==='galeria'?'active':''}" data-est-modo="galeria" aria-label="Galeria">${icon('grid')}</button><button class="${st.modo==='lista'?'active':''}" data-est-modo="lista" aria-label="Lista">${icon('menu')}</button></div></div></div>
  ${st.modo==='galeria'?galeriaParado(itens,excesso):listaParado(itens,excesso)}`}
 // Estoque parado em galeria (cartões com foto, como a Posição de estoque) ou em lista. O modo é o mesmo da Posição.
@@ -160,20 +171,20 @@ const GRAV={f180:3,f90:2,f60:1};
 function ordemGravidade(l){return [...l].sort((a,b)=>(GRAV[b.fx[0]]||0)-(GRAV[a.fx[0]]||0)||(b.dias??1e9)-(a.dias??1e9)||b.valor-a.valor)}
 function imgDe(sku){const p=st.lista.find(x=>String(x.id).trim()===String(sku||'').trim());return p?.imagem||''}
 function fotoCartao(sku,badge){const u=imgDe(sku);return `<span class="estfoto">${u?`<img src="${esc(u)}" alt="" loading="lazy" onerror="this.parentNode.classList.add('semfoto');this.remove()">`:icon('box')}${badge}</span>`}
-function cartaoParado(l){const tempo=l.dias==null?'Parado há mais de 180 dias':`Parado há ${l.dias} dias`;
+function cartaoParado(l){const tempo=l.dias==null?`Parado há mais de ${PE().get('estoque.faixa3_dias')} dias`:`Parado há ${l.dias} dias`;
  return `<button class="estcard parado ${l.fx[0]}" data-est-ficha="${esc(l.sku)}" title="${esc(l.fx[3])}">${fotoCartao(l.sku,'')}<span class="esttarja ${l.fx[0]}">${icon('clock')} ${tempo}<small>${esc(l.fx[1])}</small></span>
   <span class="estinfo"><strong>${esc(l.nome)}</strong><small class="mono">${esc(l.sku)}</small>
-  <span class="estnums estnums-din"><span><b>${nf(l.saldo)}</b><small>em estoque</small></span><span><b class="red">${money(l.valor)}</b><small>parado</small></span><span><b>${l.dias==null?'180+':l.dias}</b><small>dias sem venda</small></span></span>
+  <span class="estnums estnums-din"><span><b>${nf(l.saldo)}</b><small>em estoque</small></span><span><b class="red">${money(l.valor)}</b><small>parado</small></span><span><b>${l.dias==null?PE().get('estoque.faixa3_dias')+'+':l.dias}</b><small>dias sem venda</small></span></span>
   <span class="estfoot"><span class="caption">${l.piso?`mínimo ${money(l.piso)}`:'sem custo'}${l.abaixo?' · <b class="red">preço atual abaixo</b>':''}</span>${l.sug?`<span class="estbuy">vender a ${money(l.sug)}</span>`:''}</span></span></button>`}
 function cartaoExcesso(l){return `<button class="estcard" data-est-ficha="${esc(l.sku)}">${fotoCartao(l.sku,'<span class="badge warn">excesso</span>')}
   <span class="estinfo"><strong>${esc(l.nome)}</strong><small class="mono">${esc(l.sku)}</small>
   <span class="estnums estnums-din"><span><b>${nf(l.saldo)}</b><small>em estoque</small></span><span><b>${cob(l)}</b><small>cobertura</small></span><span><b>${nf(l.sobra)}</b><small>a mais</small></span></span>
   <span class="estfoot"><span class="caption">ritmo ${l.media.toFixed(2).replace('.',',')}/dia</span><span class="estbuy">${money(l.vSobra)} a mais</span></span></span></button>`}
 function galeriaParado(itens,excesso){return `<div class="estgal">${itens.slice(0,300).map(cartaoParado).join('')||'<div class="empty">Nenhum produto parado. ✓</div>'}</div>
- ${excesso.length?`<div class="tabletop" style="margin-top:22px"><div><h2>Excesso em itens que vendem</h2><p class="caption">Unidades além de 3× a cobertura alvo: não comprar de novo até baixar.</p></div></div><div class="estgal">${excesso.slice(0,100).map(cartaoExcesso).join('')}</div>`:''}`}
+ ${excesso.length?`<div class="tabletop" style="margin-top:22px"><div><h2>Excesso em itens que vendem</h2><p class="caption">Unidades além de ${String(PE().get('estoque.excesso_x')).replace('.',',')}× a cobertura alvo: não comprar de novo até baixar.</p></div></div><div class="estgal">${excesso.slice(0,100).map(cartaoExcesso).join('')}</div>`:''}`}
 function listaParado(itens,excesso){return `<div class="tablebox"><div class="tablewrap"><table><thead><tr><th>Produto</th><th class="num">Saldo</th><th class="num">Valor parado</th><th class="num">Última venda</th><th class="num">Último preço de venda</th><th class="num">Mínimo (lucro líquido zero)</th><th class="num">Preço sugerido</th><th>O que fazer</th></tr></thead><tbody>
   ${itens.slice(0,300).map(l=>`<tr class="clickrow" data-est-ficha="${esc(l.sku)}"><td class="comfoto">${foto(l.sku)}<strong>${esc(l.nome)}</strong><br><span class="caption mono">${esc(l.sku)}</span></td><td class="num">${nf(l.saldo)}</td><td class="num">${money(l.valor)}</td><td class="num">${l.dias==null?'há mais de 180 dias':`há ${l.dias} dias`}</td><td class="num">${l.preco?money(l.preco):'—'}</td><td class="num">${l.piso?money(l.piso):'<span class="caption">sem custo</span>'}${l.abaixo?'<br><span class="badge bad">preço atual abaixo</span>':''}</td><td class="num"><strong>${l.sug?money(l.sug):'—'}</strong></td><td class="caption">${esc(l.fx[3])}</td></tr>`).join('')||'<tr><td colspan="8" class="empty">Nenhum produto parado. ✓</td></tr>'}</tbody></table></div></div>
-${excesso.length?`<div class="tablebox"><div class="tabletop"><div><h2>Excesso em itens que vendem</h2><p class="caption">Unidades além de 3× a cobertura alvo: não comprar de novo até baixar.</p></div></div><div class="tablewrap"><table><thead><tr><th>Produto</th><th class="num">Saldo</th><th class="num">Ritmo/dia</th><th class="num">Cobertura</th><th class="num">Unidades a mais</th><th class="num">Valor a mais</th></tr></thead><tbody>
+${excesso.length?`<div class="tablebox"><div class="tabletop"><div><h2>Excesso em itens que vendem</h2><p class="caption">Unidades além de ${String(PE().get('estoque.excesso_x')).replace('.',',')}× a cobertura alvo: não comprar de novo até baixar.</p></div></div><div class="tablewrap"><table><thead><tr><th>Produto</th><th class="num">Saldo</th><th class="num">Ritmo/dia</th><th class="num">Cobertura</th><th class="num">Unidades a mais</th><th class="num">Valor a mais</th></tr></thead><tbody>
   ${excesso.slice(0,100).map(l=>`<tr class="clickrow" data-est-ficha="${esc(l.sku)}"><td class="comfoto">${foto(l.sku)}<strong>${esc(l.nome)}</strong><br><span class="caption mono">${esc(l.sku)}</span></td><td class="num">${nf(l.saldo)}</td><td class="num">${l.media.toFixed(2).replace('.',',')}</td><td class="num">${cob(l)}</td><td class="num">${nf(l.sobra)}</td><td class="num">${money(l.vSobra)}</td></tr>`).join('')}</tbody></table></div></div>`:''}`}
 addPage('estparado','box','Estoque parado',paradoView,'Dinheiro parado em produto sem venda há 60 dias ou mais, por faixa, com o preço mínimo sem prejuízo e o que fazer.','',bind);
 // Avisos: ruptura no sino e na Central do dia.

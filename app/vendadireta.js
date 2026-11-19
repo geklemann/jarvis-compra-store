@@ -22,7 +22,9 @@ async function carregar(){if(!window.Cloud?.ws)return;const [v,r,p]=await Promis
  st.vendas=v.data||[];st.rec=r.data||[];st.prods=p.data||[];if(['vendadireta','receber'].includes(page)&&!document.querySelector('.modalback'))render()}
 const up=async(t,row)=>{const {error}=await Cloud.client.from(t).upsert({...row,workspace_id:Cloud.ws,updated_at:new Date().toISOString()},{onConflict:'workspace_id,id'});if(error)throw error};
 const total=v=>Math.round(((v.itens||[]).reduce((s,i)=>s+Number(i.qtd||0)*Number(i.preco||0),0)+Number(v.frete||0)-Number(v.desconto||0))*100)/100;
-const CONDICOES=[['0','À vista'],['30','30 dias'],['30/60','30/60'],['30/60/90','30/60/90'],['28/56/84','28/56/84']];
+// Condições de pagamento: Configurações › Parâmetros › Venda direta e B2B (prazos em dias; 0 = à vista).
+const CONDICOES0=()=>window.Parametros.get('b2b.condicoes').map(k=>[k,k==='0'?'À vista':/^\d+$/.test(k)?k+' dias':k]);
+const CONDICOES={find:f=>CONDICOES0().find(f),map:f=>CONDICOES0().map(f)};
 function gerarParcelas(v){const cond=v.condicao||'0',base=v.emissao||hoje(),dias=cond.split('/').map(Number),t=total(v),n=dias.length,val=Math.floor(t/n*100)/100;
  return dias.map((d,k)=>({n:k+1,vencimento:somaDias(base,d),valor:k===n-1?Math.round((t-val*(n-1))*100)/100:val}))}
 

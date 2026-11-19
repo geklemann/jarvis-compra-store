@@ -39,7 +39,8 @@ function clientes(){const k=db.orders.length+'|'+(db.orders.at(-1)?.id||'')+'|'+
  const quint=(arr,v,inv)=>{const i=arr.findIndex(x=>x>=v);const p=(i<0?arr.length:i)/Math.max(1,arr.length);const q=Math.min(5,Math.floor(p*5)+1);return inv?6-q:q};
  const rs=l.map(c=>c.recencia).sort((a,b)=>a-b),ms=l.map(c=>c.total).sort((a,b)=>a-b);
  for(const c of l){c.R=quint(rs,c.recencia,true);c.F=c.n>=6?5:c.n>=4?4:c.n>=3?3:c.n>=2?2:1;c.M=quint(ms,c.total,false);c.rfm=`${c.R}${c.F}${c.M}`;
-  c.seg=c.recencia>180?'Inativo':c.recencia>90?'Em risco':c.n>=2&&c.M>=5?'VIP':c.n>=2?'Recorrente':'Novo';
+  // Segmento: a definição única de Parametros.segmento (Configurações › Parâmetros › Clientes), a mesma de Vendas › Clientes.
+  c.seg=window.Parametros.segmento({recencia:c.recencia,n:c.n,total:c.total},ms);
   c.status=c.proxima?(c.proxima<hoje()?(dias(c.proxima)<=30?'Recompra atrasada':'Fora da janela'):(dias(c.proxima)>=-15?'Recompra próxima':'Aguardando')):(c.recencia>=25&&c.recencia<=60?'Janela 2ª compra':'')}
  cache=l;cacheKey=k;return l}
 // Comprados juntos: pares de produtos no mesmo pedido.

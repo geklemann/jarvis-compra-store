@@ -17,7 +17,10 @@
 (()=>{
 const M=window.PrecoMotor,n=M.n,r2=M.r2;
 Object.assign(paths,{custo:'M3 7h18v13H3z M3 7l3-4h12l3 4 M12 11v5 M9.5 13.5h5',regras:'M4 6h10 M18 6h2 M4 12h4 M12 12h8 M4 18h12 M20 18h0 M14 4v4 M8 10v4 M16 16v4'});
-const PLAT={'Mercado Livre':'Mercado Livre','Mercado Livre Clássico':'Mercado Livre','Magalu':'Magalu','Shopee':'Shopee','Site próprio':'Site próprio'};
+// Regra de preço (tipo de anúncio) → canal de venda (o "platform" dos pedidos): do cadastro de canais (window.Canais).
+const PLAT=new Proxy({},{get:(_,k)=>typeof k==='string'?window.Canais.canalDaRegra(k)??undefined:undefined,has:(_,k)=>!!window.Canais.canalDaRegra(k),ownKeys:()=>window.Canais.regras().map(r=>r.id),getOwnPropertyDescriptor:(_,k)=>{const v=window.Canais.canalDaRegra(k);return v?{value:v,enumerable:true,configurable:true}:undefined}});
+/** Regra que divide os pedidos com outra do mesmo canal (Mercado Livre: Clássico e Premium vêm juntos): o real fica na principal. */
+const junto=k=>{const c=window.Canais.porId(PLAT[k]);return !!c&&c.regras.length>1&&k!==c.id};
 const pc=v=>v==null||!isFinite(v)?'—':(Math.round(v*10)/10).toLocaleString('pt-BR',{minimumFractionDigits:1,maximumFractionDigits:1})+'%';
 const vv=v=>String(Math.round(n(v)*100)/100).replace('.',',');
 const hojeISO=()=>new Date().toLocaleDateString('sv-SE');
@@ -27,17 +30,20 @@ const mesAtual=()=>typeof month==='string'&&/^\d{4}-\d{2}$/.test(month)?month:ho
 const memo=new Map();function lembrar(nome,chave,fn){const x=memo.get(nome);if(x&&x.k===chave)return x.v;const v=fn();memo.set(nome,{k:chave,v});return v}
 
 // ─── Regras (db.pricing), convertidas das antigas na primeira leitura ───
+// As regras padrão entram uma vez (canaisSemeados): depois, a regra que a empresa tirou não volta sozinha; "Voltar ao
+// padrão" em Cadastros › Canais de venda traz de volta. Canal novo do cadastro (ex.: Amazon) já nasce com a regra dele.
 function regras(){const r=M.converter(db.pricing);if(r.mudou){db.pricing=r.pricing;M.converterProdutos(db.products)}const p=db.pricing;
- p.canais=p.canais||{};for(const [k,v] of Object.entries(M.CANAIS_PADRAO))if(!p.canais[k])p.canais[k]=JSON.parse(JSON.stringify(v));
+ p.canais=p.canais||{};if(!p.canaisSemeados){for(const [k,v] of Object.entries(M.CANAIS_PADRAO))if(!p.canais[k])p.canais[k]=JSON.parse(JSON.stringify(v));p.canaisSemeados=true}
  for(const c of Object.values(p.canais)){if(!Array.isArray(c.faixas))c.faixas=[];if(c.freteAcima==null)c.freteAcima=0;if(c.freteFixo==null)c.freteFixo=0}
- p.metas={minimo:0,alvo:p.metas?.alvo??10};p.tributos=p.tributos||{fonte:'auto',difal:'auto',manual:8};p.despesas=p.despesas||{ads:3,fixas:{fonte:'dre',manual:5}};
+ p.metas={minimo:PR().get('precos.minimo'),alvo:p.metas?.alvo??10};p.tributos=p.tributos||{fonte:'auto',difal:'auto',manual:8};p.despesas=p.despesas||{ads:3,fixas:{fonte:'dre',manual:5}};
  if(!p.despesas.fixas)p.despesas.fixas={fonte:'dre',manual:5};p.custo=p.custo||{regra:'nota'};p.excecoes=Array.isArray(p.excecoes)?p.excecoes:[];return p}
 const canalRegra=k=>regras().canais[k]||null;
 const canaisAtivos=()=>Object.entries(regras().canais).filter(([,c])=>c.ativo).map(([k])=>k);
 /** Mercado Livre Clássico só aparece se a empresa tem preço dele em algum produto. */
 const canaisDaTabela=()=>canaisAtivos().filter(k=>k!=='Site próprio'||(db.products||[]).some(p=>n(p.precos?.[k])>0)).filter(k=>k!=='Mercado Livre Clássico'||(db.products||[]).some(p=>n(p.precos?.[k])>0));
 const rotulo=k=>canalRegra(k)?.rotulo||M.CANAIS_PADRAO[k]?.rotulo||k;
-function canalDe(t){const s=normalized(String(t||''));if(/shopee/.test(s))return 'Shopee';if(/magalu|magazine/.test(s))return 'Magalu';if(/classic/.test(s))return 'Mercado Livre Clássico';if(/mercado|\bml\b|meli/.test(s))return 'Mercado Livre';if(/site|loja propria|nuvem|tray|shopify/.test(s))return 'Site próprio';return null}
+/** Regra de preço de um texto (plataforma do pedido, loja do Bling): pelas palavras de cada canal no cadastro de canais. */
+function canalDe(t){const k=window.Canais.regraDe(String(t||''));return k&&regras().canais[k]?k:null}
 
 // ─── Produtos (tabela do Jarvis + cadastro do Bling) ───
 const produto=sku=>(db.products||[]).find(p=>String(p.id)===String(sku))||null;
@@ -53,7 +59,7 @@ function notas(){const P=db.purchases||[];return lembrar('notas',P.length+'|'+(P
  for(const l of m.values())l.sort((a,b)=>String(b.data).localeCompare(String(a.data)));return m})}
 const notasDe=sku=>notas().get(String(sku||'').trim().toUpperCase())||[];
 function custo(sku){const R=regras(),p=produto(sku),b=bling(sku),e=p?.extra||{},cp=e.comp||{},ns=notasDe(sku),nota=ns[0]||null;
- const q=ns.reduce((s,x)=>s+x.qtd,0),media=q?ns.reduce((s,x)=>s+(x.valor+x.acrescimos)*x.qtd,0)/q:null,regra=R.custo.regra||'nota';
+ const q=ns.reduce((s,x)=>s+x.qtd,0),media=q?ns.reduce((s,x)=>s+(x.valor+x.acrescimos)*x.qtd,0)/q:null,regra=R.custo.regra||'nota',G=k=>PR().get(k);
  let compra=0,acr=0,origem={tipo:'sem'};
  if((e.custoManual||regra==='manual')&&n(p?.custo)>0){compra=n(p.custo);origem={tipo:'manual',texto:e.custoManual?'à mão (este produto)':'à mão (regra da empresa)'}}
  else if(regra==='media'&&media){compra=media;origem={tipo:'media',texto:`média de ${ns.length} nota(s) de entrada`}}
@@ -61,19 +67,22 @@ function custo(sku){const R=regras(),p=produto(sku),b=bling(sku),e=p?.extra||{},
  else if(n(p?.custo)>0){compra=n(p.custo);origem={tipo:'manual',texto:'à mão · sem nota de entrada'}}
  else if(n(b?.custo)>0){compra=n(b.custo);origem={tipo:'bling',texto:'Bling · sem nota nem custo à mão'}}
  const c=M.custoProduto({compra,acrescimos:acr,frete:cp.frete,ipi:cp.ipi,st:cp.st,creditos:cp.creditos,perdas:cp.perdas,embalagem:p?.embalagem});
- const ant=ns[1]||null,mudou=nota&&ant&&ant.valor>0&&Math.abs(nota.valor/ant.valor-1)>0.02&&nota.data>=menos(30);
- return {...c,sku,origem,tem:compra>0,bling:n(b?.custo)||null,media,nota,notas:ns.length,mudou,velho:origem.tipo==='nota'&&nota.data<menos(180),difBling:compra>0&&n(b?.custo)>0?(n(b.custo)-(compra+acr))/(compra+acr):null}}
+ const ant=ns[1]||null,mudou=nota&&ant&&ant.valor>0&&Math.abs(nota.valor/ant.valor-1)>G('precos.custo_mudou_pct')/100&&nota.data>=menos(G('precos.custo_mudou_dias'));
+ return {...c,sku,origem,tem:compra>0,bling:n(b?.custo)||null,media,nota,notas:ns.length,mudou,velho:origem.tipo==='nota'&&nota.data<menos(G('precos.custo_velho_dias')),difBling:compra>0&&n(b?.custo)>0?(n(b.custo)-(compra+acr))/(compra+acr):null}}
 const custoDe=sku=>{const c=custo(sku);return c.tem?c.total:0};
 
 // ─── Tributos, despesas e metas ───
+const PR=()=>window.Parametros;
 const simples=()=>{try{const s=window.Contab?.simples?.();if(s!=null)return !!s}catch{}return /simples|mei/i.test(String(db.gerencial?.fiscal?.regime||''))};
 const regimeNome=()=>String(window.Marca?.regime?.()||db.gerencial?.fiscal?.regime||(simples()?'Simples Nacional':'não informado'));
-function tributosAuto(){return lembrar('trib',[(db.orders||[]).length,(db.accLines||[]).length,mesAtual(),JSON.stringify(db.gerencial?.fiscal?.por_uf||'').length,db.gerencial?.contabil?.aliq_simples||''].join('|'),()=>{
- const C=window.Contab,meses=mesesAntes(mesAtual(),7).slice(1),ts=[]; /* meses fechados: o mês corrente ainda está pela metade */try{if(C?.tributos)for(const m of meses){const t=C.tributos(m);if(t&&n(t.receita)>0)ts.push([m,t]);if(ts.length>=3)break}}catch{}
+function tributosAuto(){return lembrar('trib',[(db.orders||[]).length,(db.accLines||[]).length,mesAtual(),JSON.stringify(db.gerencial?.fiscal||'').length,db.gerencial?.fiscal?.aliq_simples||'',PR().versao()].join('|'),()=>{
+ const C=window.Contab,meses=mesesAntes(mesAtual(),PR().get('precos.trib_janela')+1).slice(1),ts=[],quantos=PR().get('precos.trib_meses'); /* meses fechados: o mês corrente ainda está pela metade */try{if(C?.tributos)for(const m of meses){const t=C.tributos(m);if(t&&n(t.receita)>0)ts.push([m,t]);if(ts.length>=quantos)break}}catch{}
  if(ts.length){const rec=ts.reduce((s,[,t])=>s+n(t.receita),0),dif=ts.reduce((s,[,t])=>s+n(t.difal),0),sn=!!ts[0][1].simples;
   if(sn)return {simples:true,das:n(ts[0][1].aliqDas)*100,rbt12:n(ts[0][1].rbt12),difalReal:rec?dif/rec*100:0,meses:ts.map(x=>x[0]),notas:null};
-  const icms=ts.reduce((s,[,t])=>s+n(t.icms),0),pis=ts.reduce((s,[,t])=>s+n(t.pis)+n(t.cofins),0),c=db.gerencial?.contabil||{},real=/real/i.test(regimeNome());
-  const ir=real?0:(n(c.presuncao_irpj)||8)*0.15+(n(c.presuncao_csll)||12)*0.09;
+  const icms=ts.reduce((s,[,t])=>s+n(t.icms),0),pis=ts.reduce((s,[,t])=>s+n(t.pis)+n(t.cofins),0),real=/real/i.test(regimeNome());
+  // IRPJ/CSLL do presumido: a mesma provisão da Contabilidade automática (presunção de Regras fiscais › Contábil e o
+  // adicional de 10% do IRPJ acima de R$ 20 mil de base no mês); mês sem a provisão, a mesma conta sobre a receita.
+  const ir=real?0:rec?ts.reduce((s,[,t])=>{if(t.irpj!=null||t.csll!=null)return s+n(t.irpj)+n(t.csll);const x=PR().fiscal.irpjCsll(n(t.receita));return s+x.irpj+x.csll},0)/rec*100:0;
   return {simples:false,icms:rec?icms/rec*100:0,pis:rec?pis/rec*100:0,difalReal:rec?dif/rec*100:0,irpj:ir,real,meses:ts.map(x=>x[0])}}
  // Sem a apuração do Contab: a alíquota efetiva do último balancete (−tributos ÷ receita).
  try{for(const m of meses){const d=window.Gestao?.dreMes?.(m);if(d?.fonte==='balancete'&&d.v?.receita>0)return {balancete:true,pct:-(d.v.impostos||0)/d.v.receita*100,meses:[m]}}}catch{}
@@ -94,14 +103,14 @@ function tributos(){const R=regras(),t=R.tributos,a0=tributosAuto(),sn=simples()
  const difal=t.difal==='nao'?0:t.difal==='manual'?n(t.difalManual):a.difalReal,difTxt=t.difal==='nao'?'não recolhe':t.difal==='manual'?'digitado':'real das notas';
  if(a.simples)return {pct:a.das+difal,fonte:'auto',simples:true,das:a.das,difal,difalReal:a.difalReal,difalNotas:a.difalNotas||null,difTxt,rbt12:a.rbt12,meses:a.meses,partes:[['DAS (alíquota efetiva)',a.das],['DIFAL + FCP',difal]],texto:`DAS ${pc(a.das)} + DIFAL ${pc(difal)}`};
  return {pct:a.icms+a.pis+a.irpj+difal,fonte:'auto',simples:false,difal,difalReal:a.difalReal,difalNotas:a.difalNotas||null,difTxt,meses:a.meses,partes:[['ICMS',a.icms],['DIFAL + FCP',difal],['PIS/COFINS',a.pis],[a.real?'IRPJ/CSLL (no Real, sobre o lucro: fora da conta)':'IRPJ/CSLL (presunção)',a.irpj]],texto:`ICMS ${pc(a.icms)} + DIFAL ${pc(difal)} + PIS/COFINS ${pc(a.pis)} + IRPJ/CSLL ${pc(a.irpj)}`}}
-function fixasDRE(){return lembrar('fixas',[(db.accLines||[]).length,mesAtual()].join('|'),()=>{const G0=window.Gestao;if(!G0?.dreMes)return null;
- const ms=[...new Set((db.accLines||[]).filter(l=>l.kind==='balancete').map(l=>l.month))].sort().slice(-3);if(!ms.length)return null;let r=0,d=0;const por=[];
+function fixasDRE(){return lembrar('fixas',[(db.accLines||[]).length,mesAtual(),PR().get('precos.fixas_meses')].join('|'),()=>{const G0=window.Gestao;if(!G0?.dreMes)return null;
+ const ms=[...new Set((db.accLines||[]).filter(l=>l.kind==='balancete').map(l=>l.month))].sort().slice(-PR().get('precos.fixas_meses'));if(!ms.length)return null;let r=0,d=0;const por=[];
  for(const m of ms){const v=G0.dreMes(m,'gerencial')?.v||{},dm=-((v.administrativas||0)+(v.trabalhistas||0)+(v.outras||0)+(v.depreciacao||0));r+=v.receita||0;d+=dm;por.push([m,v.receita?dm/v.receita*100:0])}
  return r>0?{pct:d/r*100,meses:por,valor:d,receita:r}:null})}
 function fixas(){const f=regras().despesas.fixas,d=fixasDRE();if(f.fonte==='manual'||!d)return {pct:n(f.manual),fonte:f.fonte==='manual'?'manual':'reserva',dre:d};return {pct:d.pct,fonte:'dre',dre:d}}
 function ads(){const a=regras().despesas.ads;let real=null;try{real=window.Anuncios?.percentual?.()??null}catch{}return {pct:n(a),real}}
 function excecao(sku,canal){const g=produto(sku)?.extra?.grupo;if(!g)return null;const l=regras().excecoes.filter(e=>e.grupo===g&&(e.canal===canal||e.canal==='*'));return l.length?Object.assign({},...l.sort((a,b)=>(a.canal==='*'?0:1)-(b.canal==='*'?0:1))):null}
-function metas(sku,canal){const R=regras(),e=sku?excecao(sku,canal):null;return {minimo:0,alvo:e?.alvo!=null?n(e.alvo):n(R.metas.alvo)}}
+function metas(sku,canal){const R=regras(),e=sku?excecao(sku,canal):null;return {minimo:PR().get('precos.minimo'),alvo:e?.alvo!=null?n(e.alvo):n(R.metas.alvo),tol:PR().get('precos.tolerancia_alvo')}}
 
 // ─── Real dos últimos 30 dias (tarifa, frete e repasse que o marketplace informou: Margem real) ───
 function real(sku,canal){const m=window.Margem?.realAnuncios?.(30);if(!m)return null;const g=m.get((PLAT[canal]||canal)+'|'+String(sku||'').trim());if(!g||!(g.u>0)||!(g.venda>0))return null;
@@ -129,8 +138,8 @@ function params(sku,canal,modo='regra'){const c=canalRegra(canal);if(!c)return n
 function paramsReal(g,sku){const cu=custo(sku);return {custo:cu.tem?cu.total:0,tributos:tributos().pct,ads:ads().pct,fixas:fixas().pct,comissao:g.venda?(g.com-g.reb+g.outros)/g.venda*100:0,fixa:g.u?g.fixa/g.u:0,faixas:[],frete:g.u?g.frete/g.u:0,freteAcima:0}}
 function conta(sku,canal,P,modo='regra'){const p=params(sku,canal,modo);return p&&n(P)>0?M.conta(n(P),p):null}
 function precos(sku,canal){const p=params(sku,canal);return p?M.precos(p,metas(sku,canal)):null}
-function canalPrincipal(sku){const ini=menos(180),c=new Map();for(const o of db.orders||[]){if(o.date<ini)continue;for(const i of o.items||[])if(String(i.sku||'').trim()===String(sku))c.set(o.platform,(c.get(o.platform)||0)+n(i.qty))}
- const top=[...c].sort((a,b)=>b[1]-a[1])[0]?.[0];return (top&&canalDe(top))||'Mercado Livre'}
+function canalPrincipal(sku){const ini=menos(PR().get('precos.canal_dias')),c=new Map();for(const o of db.orders||[]){if(o.date<ini)continue;for(const i of o.items||[])if(String(i.sku||'').trim()===String(sku))c.set(o.platform,(c.get(o.platform)||0)+n(i.qty))}
+ const top=[...c].sort((a,b)=>b[1]-a[1])[0]?.[0],res=PR().get('precos.canal_reserva');return (top&&canalDe(top))||(regras().canais[res]?res:Object.keys(regras().canais)[0]||res)}
 /** Resumo de um produto e canal num preço: o que as telas mostram (margem líquida, contribuição e os 3 preços). */
 function resumo(sku,canal,P){const L=conta(sku,canal,P),pr=precos(sku,canal);return L&&pr?{preco:L.preco,liqP:L.liqP,mcP:L.mcP,liq:L.liq,mc:L.mc,piso:pr.piso,minimo:pr.minimo,alvo:pr.alvo,custo:L.custo,situacao:M.situacao(L.liqP,metas(sku,canal))}:null}
 const SIT={prejuizo:['bad','abaixo do mínimo'],abaixo:['warn','abaixo do alvo'],alvo:['ok','no alvo']};
@@ -143,17 +152,17 @@ const uc={busca:'',filtro:'todos',sel:null};
 window.Reiniciar?.registrar(uc,['busca','filtro','sel']);
 function prod(id){db.products=db.products||[];let p=db.products.find(x=>String(x.id)===String(id));if(!p){const b=bling(id);p={id,nome:b?.nome||id,custo:n(b?.custo),embalagem:0,precos:{},extra:{}};db.products.push(p)}p.precos=p.precos||{};p.extra=p.extra||{};return p}
 function custoView(){const R=regras(),L=produtos().map(p=>({p,c:custo(p.id)})),q=normalized(uc.busca);
- const F={todos:['Todos',()=>true],bling:['Diferente do Bling',x=>x.c.difBling!=null&&Math.abs(x.c.difBling)>0.02],mudou:['Custo mudou',x=>x.c.mudou],semnota:['Sem nota',x=>x.c.origem.tipo!=='nota'&&x.c.origem.tipo!=='media'],semcusto:['Sem custo',x=>!x.c.tem]};
+ const pb=PR().get('precos.custo_bling_pct'),F={todos:['Todos',()=>true],bling:['Diferente do Bling',x=>x.c.difBling!=null&&Math.abs(x.c.difBling)>pb/100],mudou:['Custo mudou',x=>x.c.mudou],semnota:['Sem nota',x=>x.c.origem.tipo!=='nota'&&x.c.origem.tipo!=='media'],semcusto:['Sem custo',x=>!x.c.tem]};
  const cont=k=>L.filter(F[k][1]).length,lista=L.filter(x=>F[uc.filtro][1](x)&&(!q||normalized(x.p.id+' '+x.p.nome).includes(q))).sort((a,b)=>a.p.nome.localeCompare(b.p.nome,'pt-BR'));
  const sel=L.find(x=>x.p.id===uc.sel)||lista[0]||null,porNota=L.filter(x=>x.c.origem.tipo==='nota'||x.c.origem.tipo==='media').length,velhos=L.filter(x=>x.c.velho);
  const kpi=(t,v,s,c='')=>`<div class="card kpi"><span class="kpil">${t}</span><span class="kpiv ${c}">${v}</span><span class="kpis">${s}</span></div>`;
  const REG={nota:'Última nota de entrada',media:'Média das notas',manual:'Digitado à mão'};
- return `<div class="grid kpis4">${kpi('Produtos com custo',`${L.filter(x=>x.c.tem).length} de ${L.length}`,`${porNota} pela nota de entrada · ${L.filter(x=>x.c.origem.tipo==='manual').length} à mão`)}${kpi('Custo diferente do Bling',String(cont('bling')),'mais de 2% de diferença · vale atualizar o Bling',cont('bling')?'gold':'')}${kpi('Nota de entrada nova',String(cont('mudou')),'custo mudou mais de 2% em 30 dias · confira o preço',cont('mudou')?'gold':'')}${kpi('Sem nota há 180 dias',String(velhos.length),velhos.length?`custo pode estar velho (${esc(velhos.slice(0,2).map(x=>x.p.id).join(', '))})`:'todas as notas são recentes')}</div>
+ return `<div class="grid kpis4">${kpi('Produtos com custo',`${L.filter(x=>x.c.tem).length} de ${L.length}`,`${porNota} pela nota de entrada · ${L.filter(x=>x.c.origem.tipo==='manual').length} à mão`)}${kpi('Custo diferente do Bling',String(cont('bling')),`mais de ${pc(pb).replace(',0%','%')} de diferença · vale atualizar o Bling`,cont('bling')?'gold':'')}${kpi('Nota de entrada nova',String(cont('mudou')),`custo mudou mais de ${pc(PR().get('precos.custo_mudou_pct')).replace(',0%','%')} em ${PR().get('precos.custo_mudou_dias')} dias · confira o preço`,cont('mudou')?'gold':'')}${kpi(`Sem nota há ${PR().get('precos.custo_velho_dias')} dias`,String(velhos.length),velhos.length?`custo pode estar velho (${esc(velhos.slice(0,2).map(x=>x.p.id).join(', '))})`:'todas as notas são recentes')}</div>
  ${sel?custoPainel(sel.p,sel.c,R,REG):''}
  <div class="tablebox"><div class="pmbar"><input type="search" id="pmCustoBusca" placeholder="Produto ou SKU…" value="${esc(uc.busca)}"><div class="segtabs">${Object.entries(F).map(([k,[t]])=>`<button class="${uc.filtro===k?'active':''}" data-pm-cfiltro="${k}">${t}${k==='todos'?'':` (${cont(k)})`}</button>`).join('')}</div>
   <span style="flex:1"></span><button class="small" data-g="import-precos">${icon('upload')} Importar planilha</button><button class="small" data-nav="cadprodutos">${icon('box')} Cadastro (SKU, peso, embalagem)</button></div>
  <div class="tablewrap"><table class="pmtab"><thead><tr><th>Produto</th><th class="num">Compra</th><th class="num">Frete, IPI e ST</th><th class="num">Embalagem e perdas</th><th class="num">Custo do produto</th><th>De onde veio</th><th class="num">Bling</th></tr></thead><tbody>
- ${lista.slice(0,400).map(x=>{const c=x.c;return `<tr class="clickrow ${sel&&sel.p.id===x.p.id?'pmon':''}" data-pm-csel="${esc(x.p.id)}"><td><b>${esc(x.p.nome)}</b><br><span class="caption mono">${esc(x.p.id)}</span></td><td class="num">${c.tem?money(c.compra):'—'}</td><td class="num">${c.tem?money(c.acrescimos+c.frete+c.ipi+c.st-c.creditos):'—'}</td><td class="num">${c.tem?money(c.embalagem+c.perdas):'—'}</td><td class="num"><b>${c.tem?money(c.total):'<span class="red">sem custo</span>'}</b></td><td><span class="badge ${c.origem.tipo==='nota'||c.origem.tipo==='media'?'info':c.origem.tipo==='sem'?'bad':'warn'}">${esc(c.origem.texto||'sem custo')}</span>${c.mudou?' <span class="badge gold">mudou</span>':''}</td><td class="num">${c.bling?money(c.bling):'—'}${c.difBling!=null&&Math.abs(c.difBling)>0.02?`<br><span class="caption gold">${c.difBling>0?'+':''}${pc(c.difBling*100)}</span>`:''}</td></tr>`}).join('')||'<tr><td colspan="7" class="empty">Nenhum produto neste filtro.</td></tr>'}</tbody></table></div></div>`}
+ ${lista.slice(0,400).map(x=>{const c=x.c;return `<tr class="clickrow ${sel&&sel.p.id===x.p.id?'pmon':''}" data-pm-csel="${esc(x.p.id)}"><td><b>${esc(x.p.nome)}</b><br><span class="caption mono">${esc(x.p.id)}</span></td><td class="num">${c.tem?money(c.compra):'—'}</td><td class="num">${c.tem?money(c.acrescimos+c.frete+c.ipi+c.st-c.creditos):'—'}</td><td class="num">${c.tem?money(c.embalagem+c.perdas):'—'}</td><td class="num"><b>${c.tem?money(c.total):'<span class="red">sem custo</span>'}</b></td><td><span class="badge ${c.origem.tipo==='nota'||c.origem.tipo==='media'?'info':c.origem.tipo==='sem'?'bad':'warn'}">${esc(c.origem.texto||'sem custo')}</span>${c.mudou?' <span class="badge gold">mudou</span>':''}</td><td class="num">${c.bling?money(c.bling):'—'}${c.difBling!=null&&Math.abs(c.difBling)>pb/100?`<br><span class="caption gold">${c.difBling>0?'+':''}${pc(c.difBling*100)}</span>`:''}</td></tr>`}).join('')||'<tr><td colspan="7" class="empty">Nenhum produto neste filtro.</td></tr>'}</tbody></table></div></div>`}
 function custoPainel(p,c,R,REG){const t=produto(p.id),cp=t?.extra?.comp||{},inp=(k,v,ph='0,00')=>`<input class="pmin" data-pm-comp="${esc(p.id)}|${k}" value="${v?vv(v):''}" placeholder="${ph}" inputmode="decimal">`;
  return `<section class="card pmconta pmlargo"><div class="pmtag">Composição · ${esc(p.id)}</div><h3>${esc(p.nome)}</h3>
  <div class="pmcontagrid"><div><div class="tablewrap"><table class="pmwf"><tbody>
@@ -177,10 +186,10 @@ window.Reiniciar?.registrar(ur,['conf']);
 const inR=(path,v,suf,w=64)=>`<span class="row" style="gap:4px;justify-content:flex-end;flex-wrap:nowrap"><input class="pmin" style="width:${w}px" data-pm-r="${path}" value="${v===''||v==null?'':vv(v)}" inputmode="decimal">${suf?`<span class="caption">${suf}</span>`:''}</span>`;
 // Tarifa do canal (comissão + taxa fixa − rebate, sem frete) da regra × a real. "Usar o real" só ajusta a comissão de canal
 // sem comissão por faixa e que não junta tipos de anúncio (no ML o pedido não diz se é Clássico ou Premium).
-const ajustavel=k=>!/^Mercado Livre/.test(k)&&!(regras().canais[k]?.faixas||[]).some(f=>f.comissao!=null&&f.comissao!=='');
-function difs(){const R=regras(),out=[];for(const k of canaisAtivos()){const r=realCanal(k);if(!r||r.pedidos<5||k==='Mercado Livre Clássico')continue;const d=r.comP-r.regraP;if(Math.abs(d)>1.5)out.push({k,txt:`tarifa ${rotulo(k)} (${pc(r.regraP)} na regra, ${pc(r.comP)} real)`,usar:ajustavel(k)?()=>{const c=R.canais[k];c.comissao=r2(n(c.comissao)+d)}:null})}
- const f=fixas(),d=f.dre;if(d&&R.despesas.fixas.fonte==='manual'&&Math.abs(n(R.despesas.fixas.manual)-d.pct)>2)out.push({k:'fixas',txt:`despesas fixas (${pc(n(R.despesas.fixas.manual))} digitadas, ${pc(d.pct)} pela DRE)`,usar:()=>{R.despesas.fixas.fonte='dre'}});
- const a=ads();if(a.real!=null&&Math.abs(a.real*100-a.pct)>1.5)out.push({k:'ads',txt:`anúncios (${pc(a.pct)} na regra, ${pc(a.real*100)} real)`,usar:()=>{R.despesas.ads=r2(a.real*100)}});return out}
+const ajustavel=k=>{const c=window.Canais.porId(PLAT[k]);return !(c&&c.regras.length>1)&&!(regras().canais[k]?.faixas||[]).some(f=>f.comissao!=null&&f.comissao!=='')};
+function difs(){const R=regras(),out=[],G=k=>PR().get(k);for(const k of canaisAtivos()){const r=realCanal(k);if(!r||r.pedidos<G('precos.real_min_pedidos')||junto(k))continue;const d=r.comP-r.regraP;if(Math.abs(d)>G('precos.real_tarifa_pp'))out.push({k,txt:`tarifa ${rotulo(k)} (${pc(r.regraP)} na regra, ${pc(r.comP)} real)`,usar:ajustavel(k)?()=>{const c=R.canais[k];c.comissao=r2(n(c.comissao)+d)}:null})}
+ const f=fixas(),d=f.dre;if(d&&R.despesas.fixas.fonte==='manual'&&Math.abs(n(R.despesas.fixas.manual)-d.pct)>G('precos.real_fixas_pp'))out.push({k:'fixas',txt:`despesas fixas (${pc(n(R.despesas.fixas.manual))} digitadas, ${pc(d.pct)} pela DRE)`,usar:()=>{R.despesas.fixas.fonte='dre'}});
+ const a=ads();if(a.real!=null&&Math.abs(a.real*100-a.pct)>G('precos.real_ads_pp'))out.push({k:'ads',txt:`anúncios (${pc(a.pct)} na regra, ${pc(a.real*100)} real)`,usar:()=>{R.despesas.ads=r2(a.real*100)}});return out}
 function regrasView(){const R=regras(),t=tributos(),T=R.tributos,f=fixas(),a=ads(),D=difs(),leg=R.notasConversao||[];
  const sel=(path,v,ops)=>`<select data-pm-rs="${path}">${ops.map(([k,l])=>`<option value="${k}" ${v===k?'selected':''}>${l}</option>`).join('')}</select>`;
  const grupos=[...new Set((db.products||[]).map(p=>p.extra?.grupo).filter(Boolean))].sort();
@@ -191,7 +200,7 @@ function regrasView(){const R=regras(),t=tributos(),T=R.tributos,f=fixas(),a=ads
   <tr><td>Regime</td><td class="num"><b>${esc(regimeNome())}</b><br><span class="caption">vem de Fiscal › Regras fiscais</span></td></tr>
   <tr><td>Como calcular</td><td class="num">${sel('tributos.fonte',T.fonte||'auto',[['auto','Pelo regime (apuração do Jarvis)'],['manual','Digitado']])}</td></tr>
   ${T.fonte==='manual'||t.fonte==='reserva'?`<tr><td>Tributos sobre o preço</td><td class="num">${inR('tributos.manual',T.manual,'%')}</td></tr>`:''}
-  ${t.fonte==='auto'&&t.simples?`<tr><td>DAS (alíquota efetiva)</td><td class="num"><b>${pc(t.das)}</b><br><span class="caption">Anexo I pela receita de 12 meses (${money(t.rbt12||0)})</span></td></tr>`:''}
+  ${t.fonte==='auto'&&t.simples?`<tr><td>DAS (alíquota efetiva)</td><td class="num"><b>${pc(t.das)}</b><br><span class="caption">Anexo ${PR().get('fiscal.simples_anexo')} pela receita de 12 meses (${money(t.rbt12||0)})</span></td></tr>`:''}
   ${t.fonte==='auto'&&!t.simples?t.partes.filter(x=>!/DIFAL/.test(x[0])).map(([l,v])=>`<tr><td>${esc(l)}</td><td class="num"><b>${pc(v)}</b></td></tr>`).join(''):''}
   ${t.fonte==='auto'?`<tr><td>DIFAL + FCP (venda a consumidor de outro estado)</td><td class="num">${sel('tributos.difal',T.difal||'auto',[['auto','Real das notas'],['nao','Não recolhe'],['manual','Digitado']])}${T.difal==='manual'?inR('tributos.difalManual',T.difalManual,'%'):`<br><b>${pc(t.difal)}</b>`}<br><span class="caption">real: ${pc(t.difalReal)} das vendas (${(t.meses||[]).map(m=>m.slice(5)+'/'+m.slice(2,4)).join(', ')}${t.difalNotas?` · ${t.difalNotas.notas.toLocaleString('pt-BR')} notas emitidas`:' · apuração do Jarvis'})</span></td></tr>`:''}
   ${t.fonte==='balancete'?`<tr><td>Alíquota efetiva</td><td class="num"><b>${pc(t.pct)}</b><br><span class="caption">${esc(t.texto)}</span></td></tr>`:''}
@@ -201,14 +210,14 @@ function regrasView(){const R=regras(),t=tributos(),T=R.tributos,f=fixas(),a=ads
   <tr><td>Anúncios pagos</td><td class="num">${inR('despesas.ads',R.despesas.ads,'% da venda')}<span class="caption">${a.real!=null?`real do mês: ${pc(a.real*100)} (Anúncios pagos)`:'real: importe o gasto em Anúncios pagos'}</span></td></tr>
   <tr><td>Despesas fixas (pessoal, aluguel, sistemas, contador)</td><td class="num">${sel('despesas.fixas.fonte',R.despesas.fixas.fonte||'dre',[['dre','Média da DRE (3 meses)'],['manual','Digitado']])}${R.despesas.fixas.fonte==='manual'||!f.dre?inR('despesas.fixas.manual',R.despesas.fixas.manual,'% da venda'):`<br><b>${pc(f.pct)}</b>`}<br><span class="caption">${f.dre?`DRE ${f.dre.meses.map(([m,p])=>`${m.slice(5)}/${m.slice(2,4)} ${pc(p)}`).join(' · ')}`:'sem balancete importado: use o valor digitado'}</span></td></tr></tbody></table></div>
   <h3 style="margin:14px 0 6px">Metas</h3><div class="tablewrap"><table class="pmwf"><tbody>
-  <tr><td>Mínimo <span class="caption">(lucro líquido zero: abaixo disso a venda dá prejuízo)</span></td><td class="num"><b>0%</b></td></tr>
+  <tr><td>Mínimo <span class="caption">(${PR().get('precos.minimo')?'margem líquida mínima':'lucro líquido zero'}: abaixo disso a venda dá prejuízo)</span></td><td class="num"><b>${pc(PR().get('precos.minimo'))}</b><br><button class="fplink" data-nav="ajustes">Configurações › Parâmetros</button></td></tr>
   <tr><td>Alvo <span class="caption">(margem líquida do preço sugerido)</span></td><td class="num">${inR('metas.alvo',R.metas.alvo,'%')}</td></tr></tbody></table></div>
   <p class="caption">As mesmas metas valem na Formação de preço, na Margem real, nas Promoções, no Estoque parado, no Vigia de preços e em Produtos e anúncios. Piso = margem de contribuição zero (só para queimar estoque).</p></section></div>
  <section class="tablebox" style="margin-top:14px"><div class="tabletop"><div><h2>Canais</h2><p class="caption">Por tipo de anúncio. Tarifa = comissão + taxa fixa − rebate (sem o frete), em % do valor dos itens: a da regra nos preços vendidos × a real, só com a tarifa vinda da API do marketplace, nos últimos 30 dias. No Mercado Livre, Premium e Clássico vêm juntos.</p></div></div>
  <div class="tablewrap"><table class="pmtab"><thead><tr><th>Canal</th><th class="num">Comissão (regra)</th><th class="num">Tarifa regra × real</th><th>Taxa fixa e comissão por faixa de preço</th><th>Frete pago pela loja</th><th>Situação</th></tr></thead><tbody>
- ${Object.entries(R.canais).map(([k,c])=>{const r=realCanal(k),d=r&&k!=='Mercado Livre Clássico'?r.comP-r.regraP:null;return `<tr><td><label class="row" style="gap:6px"><input type="checkbox" class="check" data-pm-ativo="${esc(k)}" ${c.ativo?'checked':''}><b>${esc(rotulo(k))}</b></label><span class="caption">${esc(k)}</span></td><td class="num">${inR(`canais.${k}.comissao`,c.comissao,'%')}</td><td class="num">${r&&k!=='Mercado Livre Clássico'?`${pc(r.regraP)} × <b>${pc(r.comP)}</b><br><span class="caption">${r.pedidos} venda(s)</span>`:k==='Mercado Livre Clássico'?'<span class="caption">junto do Premium</span>':'—'}</td>
+ ${Object.entries(R.canais).map(([k,c])=>{const r=realCanal(k),d=r&&!junto(k)?r.comP-r.regraP:null;return `<tr><td><label class="row" style="gap:6px"><input type="checkbox" class="check" data-pm-ativo="${esc(k)}" ${c.ativo?'checked':''}><b>${esc(rotulo(k))}</b></label><span class="caption">${esc(k)}</span></td><td class="num">${inR(`canais.${k}.comissao`,c.comissao,'%')}</td><td class="num">${r&&!junto(k)?`${pc(r.regraP)} × <b>${pc(r.comP)}</b><br><span class="caption">${r.pedidos} venda(s)</span>`:junto(k)?`<span class="caption">junto do ${esc(rotulo(window.Canais.porId(PLAT[k])?.id||''))}</span>`:'—'}</td>
   <td>${esc(faixaTxt(c))}<br><button class="fplink" data-pm-faixas="${esc(k)}">editar faixas</button></td><td>${n(c.freteAcima)?`de ${money(c.freteAcima)} para cima: a média real de cada produto (30 dias)${r?.freteAcimaU!=null?`<br><span class="caption">média do canal ${money(r.freteAcimaU)}</span>`:''}<br><button class="fplink" data-pm-peso="${esc(k)}">tabela por peso (reserva)</button>`:`${inR(`canais.${k}.freteFixo`,c.freteFixo,'R$/un.')}`}</td>
-  <td>${d==null?'<span class="caption">sem vendas</span>':Math.abs(d)<=1.5?'<span class="badge ok">bate com o real</span>':`<span class="badge ${Math.abs(d)<=4?'warn':'bad'}">${d>0?'+':''}${vv(Math.round(d*10)/10)} p.p.</span>`}</td></tr>`}).join('')}</tbody></table></div></section>
+  <td>${d==null?'<span class="caption">sem vendas</span>':Math.abs(d)<=PR().get('precos.real_tarifa_pp')?'<span class="badge ok">bate com o real</span>':`<span class="badge ${Math.abs(d)<=PR().get('precos.real_ruim_pp')?'warn':'bad'}">${d>0?'+':''}${vv(Math.round(d*10)/10)} p.p.</span>`}</td></tr>`}).join('')}</tbody></table></div></section>
  <section class="tablebox" style="margin-top:14px"><div class="tabletop"><div><h2>Exceções por grupo de produtos</h2><p class="caption">Quando um grupo tem comissão ou alvo diferentes (substitui os percentuais por grupo da planilha antiga). Grupos vêm da planilha de preços importada.</p></div></div>
  <div class="tablewrap"><table class="pmtab"><thead><tr><th>Grupo</th><th>Canal</th><th class="num">Comissão</th><th class="num">Alvo líquido</th><th></th></tr></thead><tbody>
  ${R.excecoes.map((e,i)=>`<tr><td><b>${esc(e.grupo)}</b></td><td>${e.canal==='*'?'Todos':esc(rotulo(e.canal))}</td><td class="num">${e.comissao!=null?pc(n(e.comissao)):'regra do canal'}</td><td class="num">${e.alvo!=null?pc(n(e.alvo)):'alvo da empresa'}</td><td><button class="small quiet" data-pm-exdel="${i}">Remover</button></td></tr>`).join('')||'<tr><td colspan="5" class="empty">Nenhuma exceção: todos os produtos seguem as regras acima.</td></tr>'}

@@ -119,8 +119,9 @@ function mapaUF(l){const UFS=['AC','AL','AM','AP','BA','CE','DF','ES','GO','MA',
   <p class="caption" style="margin-top:12px">${top.map(([u,v])=>`<b>${u}</b> ${(v/tot*100).toFixed(1).replace('.',',')}%`).join(' · ')||'Sem UF nos pedidos.'}</p></section>`}
 // Projeção de fechamento: realizado até hoje + ritmo dos últimos 14 dias (por dia da semana) nos dias que faltam.
 function projecao(m,doMes,corrente,corte,h=hoje()){const real=doMes.reduce((x,o)=>x+o.gross,0);if(!corrente)return {real,proj:real,porCanal:{},fechado:true};
- const dia=d=>{const x=new Date(h+'T12:00:00');x.setDate(x.getDate()-d);return x.toLocaleDateString('sv-SE')},ult=db.orders.filter(o=>o.date>=dia(14)&&o.date<h);
- const porDow=new Array(7).fill(0),porCanalDow={};for(const o of ult){const w=new Date(o.date+'T12:00:00').getDay();porDow[w]+=o.gross/2;(porCanalDow[o.platform]=porCanalDow[o.platform]||new Array(7).fill(0))[w]+=o.gross/2}
+ // Semanas do ritmo: Configurações › Parâmetros › Metas e indicadores (2 no padrão; a mesma do servidor).
+ const S=window.Parametros.get('metas.projecao_semanas'),dia=d=>{const x=new Date(h+'T12:00:00');x.setDate(x.getDate()-d);return x.toLocaleDateString('sv-SE')},ult=db.orders.filter(o=>o.date>=dia(7*S)&&o.date<h);
+ const porDow=new Array(7).fill(0),porCanalDow={};for(const o of ult){const w=new Date(o.date+'T12:00:00').getDay();porDow[w]+=o.gross/S;(porCanalDow[o.platform]=porCanalDow[o.platform]||new Array(7).fill(0))[w]+=o.gross/S}
  let falta=0;const porCanal={};const [y,mm]=m.split('-').map(Number),fim=new Date(y,mm,0).getDate();
  for(let d=corte+1;d<=fim;d++){const w=new Date(y,mm-1,d,12).getDay();falta+=porDow[w];for(const c in porCanalDow)porCanal[c]=(porCanal[c]||0)+porCanalDow[c][w]}
  // Hoje ainda está acontecendo: completa o dia pela média do mesmo dia da semana.

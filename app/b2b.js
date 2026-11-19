@@ -30,7 +30,7 @@ function comissoes(mes){const vs=(window.VendaDireta?.vendas?.()||[]).filter(v=>
  return out}
 function lancarComissao(repId,mes){const c=comissoes(mes).get(repId);if(!c||!c.total)return toast('Sem comissão no mês.');const id=`COM-${repId}-${mes}`;
  if((db.payables||[]).some(p=>p.id===id))return toast('A comissão deste mês já está no contas a pagar.');
- const [a,m]=mes.split('-').map(Number),venc=new Date(a,m,Number(c.r.dia)||10).toLocaleDateString('sv-SE');
+ const [a,m]=mes.split('-').map(Number),venc=new Date(a,m,Number(c.r.dia)||window.Parametros.get('b2b.dia_vencimento')).toLocaleDateString('sv-SE');
  (db.payables||(db.payables=[])).push((window.Pagamentos?.marcar||(x=>x))({id,origem:'manual',fornecedor:c.r.nome,fornecedorDoc:dig(c.r.doc)||'',descricao:`Comissão ${mes} · ${c.l.length} venda(s)`,documento:`COM ${mes}`,vencimento:venc,valor:c.total,emissao:hoje(),parcela:1,parcelas:1,juros:0,desconto:0,valorPago:0,status:'aberto',categoria:'Serviços de terceiros',createdBy:window.Cloud?.session?.user?.email||'local'}));
  audit('Comissão lançada no contas a pagar',`${c.r.nome} · ${mes} · ${money(c.total)}`);save();render();toast(`Comissão de ${c.r.nome} lançada: ${money(c.total)}, vence ${new Date(venc+'T12:00').toLocaleDateString('pt-BR')}.`)}
 
@@ -47,7 +47,7 @@ async function propostaPdf(v){await carregaLib('jspdf','https://cdnjs.cloudflare
  const prod=(v.itens||[]).reduce((a,i)=>a+i.qtd*i.preco,0),tot=prod+Number(v.frete||0)-Number(v.desconto||0);y+=4;d.line(M,y,W-M,y);y+=16;
  for(const [k,x] of [['Produtos',prod],['Frete',Number(v.frete||0)],['Desconto',-Number(v.desconto||0)],['Total',tot]]){if(!x&&k!=='Total'&&k!=='Produtos')continue;d.setFont('helvetica',k==='Total'?'bold':'normal');d.text(k,cx[2],y);d.text(`R$ ${V(x)}`,cx[3]+50,y,{align:'right'});y+=16}
  y+=10;d.setFont('helvetica','normal');const cond={avista:'A vista','30':'30 dias','30/60':'30/60 dias','30/60/90':'30/60/90 dias'}[v.condicao]||v.condicao||'';
- for(const l of [`Condicao de pagamento: ${cond}`,(v.parcelas||[]).length?`Parcelas: ${(v.parcelas||[]).map(p=>`${new Date(p.vencimento+'T12:00').toLocaleDateString('pt-BR')} R$ ${V(p.valor)}`).join(' · ')}`:'',tab?.minimo&&prod<Number(tab.minimo)?`Pedido minimo da tabela: R$ ${V(tab.minimo)}`:'',`Validade da proposta: ${Number(cfg().validade)||7} dias. Precos sujeitos a disponibilidade de estoque.`,rep?`Representante: ${rep.nome}${rep.email?' · '+rep.email:''}`:'',v.observacao?`Observacoes: ${v.observacao}`:''].filter(Boolean)){for(const p of d.splitTextToSize(t(l),W-2*M)){d.text(p,M,y);y+=14}}
+ for(const l of [`Condicao de pagamento: ${cond}`,(v.parcelas||[]).length?`Parcelas: ${(v.parcelas||[]).map(p=>`${new Date(p.vencimento+'T12:00').toLocaleDateString('pt-BR')} R$ ${V(p.valor)}`).join(' · ')}`:'',tab?.minimo&&prod<Number(tab.minimo)?`Pedido minimo da tabela: R$ ${V(tab.minimo)}`:'',`Validade da proposta: ${Number(cfg().validade)||window.Parametros.get('b2b.validade')} dias. Precos sujeitos a disponibilidade de estoque.`,rep?`Representante: ${rep.nome}${rep.email?' · '+rep.email:''}`:'',v.observacao?`Observacoes: ${v.observacao}`:''].filter(Boolean)){for(const p of d.splitTextToSize(t(l),W-2*M)){d.text(p,M,y);y+=14}}
  d.save(`proposta-${v.numero||v.id}.pdf`)}
 
 // ─── Telas ───

@@ -7,10 +7,11 @@
 Object.assign(paths,{calendar:paths.calendar||'M4 6h16v14H4z M4 10h16 M8 3v4 M16 3v4'});
 const ano=()=>new Date().getFullYear();
 function blackFriday(y){const d=new Date(y,10,30);while(d.getDay()!==5)d.setDate(d.getDate()-1);return d}
+// As datas: Configurações › Parâmetros › Datas sazonais (Dia das Crianças, Black Friday e Natal no padrão; a empresa
+// inclui as do nicho dela). A Black Friday é a última sexta de novembro; as outras, dia e mês fixos.
 const EVENTOS=()=>{const y=ano(),alvo=(d,y2=y)=>{const x=new Date(d);if(x<new Date())x.setFullYear(y2+1);return x};
- return [{id:'criancas',nome:'Dia das Crianças',data:alvo(new Date(y,9,12)),pico:21,fator:2.5,dica:'Pico nas 3 semanas antes; os produtos de maior valor costumam concentrar a receita.'},
-  {id:'blackfriday',nome:'Black Friday',data:alvo(blackFriday(y)),pico:10,fator:2.2,dica:'Semana da Black Friday; preço e frete decidem — confira margem no Radar antes de dar desconto.'},
-  {id:'natal',nome:'Natal',data:alvo(new Date(y,11,25)),pico:30,fator:2.8,dica:'Dezembro inteiro; o prazo de entrega dos marketplaces fecha por volta de 18/12.'}]};
+ const dataDe=e=>e.regra==='blackfriday'?alvo(blackFriday(y)):alvo(new Date(y,Number(e.mes)-1,Number(e.dia)));
+ return window.Parametros.get('sazonal.datas').map((e,i)=>({id:e.id||'data'+i,nome:e.nome,data:dataDe(e),pico:Number(e.pico),fator:Number(e.fator),dica:e.dica||''}))};
 const cfg=()=>db.gerencial?.sazonal||{};
 const ui={ev:null}; // sem escolha: abre na próxima data (a mais perto de hoje)
 const atual=()=>{const evs=EVENTOS().sort((a,b)=>a.data-b.data);return {evs,ev:evs.find(e=>e.id===ui.ev)||evs[0]}};
@@ -22,7 +23,7 @@ function plano(ev){const lista=window.Estoque?.lista?.()||[];if(!lista.length)re
  // Pico em andamento: conta só os dias que faltam até a data.
  const diasPico=Math.max(0,Math.min(c.pico,Math.round((c.data-h)/864e5))),emAndamento=ini<h;
  const d30=new Date(Date.now()-30*864e5).toLocaleDateString('sv-SE'),vend=new Map();for(const o of db.orders){if(o.date<d30)continue;for(const it of o.items||[]){const s=String(it.sku||'').trim();vend.set(s,(vend.get(s)||0)+(Number(it.qty)||0))}}
- const linhas=lista.filter(p=>!p.ignorar&&vend.get(p.id)).map(p=>{const ritmo=vend.get(p.id)/30,prazo=Number(p.prazo_reposicao)||20,saldo=Math.max(0,Number(p.saldo)||0);
+ const linhas=lista.filter(p=>!p.ignorar&&vend.get(p.id)).map(p=>{const ritmo=vend.get(p.id)/30,prazo=Number(p.prazo_reposicao)||window.Parametros.get('estoque.prazo'),saldo=Math.max(0,Number(p.saldo)||0);
   // Até o pico vende no ritmo normal; no pico, ritmo × fator.
   const antes=ritmo*diasAte,pico=ritmo*c.fator*diasPico,precisa=Math.ceil(antes+pico),falta=Math.max(0,precisa-saldo);
   const limite=new Date(ini);limite.setDate(limite.getDate()-prazo);const cobertura=ritmo?saldo/ritmo:Infinity;

@@ -30,7 +30,8 @@ const CORES={'Mercado Livre':'#f5c518','Shopee':'#ee4d2d','Magalu':'#0086ff','Ti
 const eixo=v=>{const a=Math.abs(v);return (v<0?'−':'')+(a>=1e6?(a/1e6).toFixed(1).replace('.',',').replace(',0','')+' mi':a>=1e3?(a/1e3).toFixed(a>=1e4?0:1).replace('.',',').replace(',0','')+' mil':String(Math.round(a)))};
 const cor=c=>CORES[c]||platforms[c]?.color||'#8b93a7';
 const calmo=()=>{try{return matchMedia('(prefers-reduced-motion: reduce)').matches}catch{return false}};
-const valido=o=>o.gross>0&&o.fee<o.gross*.95; // cancelado/reembolsado fica fora das vendas
+const valido=o=>!window.Parametros.cancelado(o); // cancelado/reembolsado fica fora das vendas (a regra de todas as telas)
+const PRz=k=>window.Parametros.get(k);
 
 // ─────────── Dados do texto (o mesmo resumo de antes) ───────────
 function dados(){const w=semanas(),em=(o,a,b)=>o.date>=a&&o.date<=b,s1=db.orders.filter(o=>em(o,w.ini,w.fim)),s0=db.orders.filter(o=>em(o,w.ini2,w.fim2)),soma=l=>l.reduce((a,o)=>a+(o.gross||0),0);
@@ -110,7 +111,7 @@ function spark(l,cls=''){const ok=l.filter(x=>x!=null);if(ok.length<2)return '';
  return `<svg class="rzspark ${cls}" viewBox="0 0 100 32" preserveAspectRatio="none" aria-hidden="true"><path class="a" d="${ln} L100,32 L0,32 Z"/><path class="l" d="${ln}"/><circle cx="${W(pts.at(-1)[0],1)}" cy="${W(pts.at(-1)[1],1)}" r="2.2"/></svg>`}
 const num=(v,fmt)=>`<span class="rznum" data-rz-num="${Number(v)||0}" data-rz-fmt="${fmt}">${fmt==='pct'?p1(v):fmt==='int'?Math.round(v):money(v)}</span>`;
 function veredito(P){const d=P.d,v=pct(d.v1,d.v0),lider=[...d.canais].filter(c=>c.v0).sort((a,b)=>pct(b.v,b.v0)-pct(a.v,a.v0))[0],mg=d.mg?.venda?d.mg.lucro/d.mg.venda:null,metaM=d.metas?.find(a=>a.ind==='margem')?.meta,partes=[];
- const tom=v==null?'':v>=5?'Semana forte':v>=0?'Semana estável':v>-10?'Semana mais fraca':'Semana de queda';
+ const tom=v==null?'':v>=PRz('resumo.semana_forte')?'Semana forte':v>=0?'Semana estável':v>PRz('resumo.semana_fraca')?'Semana mais fraca':'Semana de queda';
  partes.push(v==null?`Vendas de ${curto(d.v1)} na semana.`:`${tom}: vendas ${v>=0?'subiram':'caíram'} ${Math.abs(v).toFixed(1).replace('.',',')}% (${curto(d.v1)})${lider&&pct(lider.v,lider.v0)>0?`, puxadas pelo ${lider.c} (${fp(pct(lider.v,lider.v0))})`:''}.`);
  if(mg!=null)partes.push(`Margem de ${p1(mg)}${metaM?mg*100>=metaM?`, acima da meta de ${String(metaM).replace('.',',')}%`:`, abaixo da meta de ${String(metaM).replace('.',',')}%`:''}.`);
  if(d.cx)partes.push(d.cx.negativos?`Atenção ao caixa: ${d.cx.negativos} dia(s) negativo(s) à frente.`:d.cx.min<d.cx.hoje*.4?`Caixa aperta em ${dBR(d.cx.dataMin)} (${curto(d.cx.min)}).`:'Caixa folgado nos próximos 30 dias.');
@@ -208,7 +209,7 @@ function fotoProd(p){if(p.foto)return `<img src="${esc(p.foto)}" alt="" loading=
  return `<svg viewBox="0 0 24 24" aria-hidden="true" style="--h:${h}"><path d="${ICONE_CAT[p.cat]||paths.caixa3}"/></svg>`}
 function blocoVitrine(P){const l=P.vitrine;if(!l.length)return '';const mx=Math.max(...l.map(p=>p.v));
  return `<section class="card rzcard rzvit"><div class="rzhead"><div><h3>Vitrine dos mais vendidos</h3><p class="caption">30 dias · tendência de unidades em 8 semanas</p></div><button class="quiet small" data-nav="crmprodutos">Todos os produtos</button></div>
-  <div class="rzvit-g">${l.map((p,i)=>`<article class="rzprod"><div class="rzfoto">${fotoProd(p)}<span class="rzpos">${i+1}º</span>${p.cob!=null&&p.cob<15?`<span class="rzrupt" title="Estoque para ${Math.max(0,Math.round(p.cob))} dia(s)">${icon('alert')} ${p.saldo<=0?'Sem estoque':`${Math.max(0,Math.round(p.cob))} dias`}</span>`:''}</div>
+  <div class="rzvit-g">${l.map((p,i)=>`<article class="rzprod"><div class="rzfoto">${fotoProd(p)}<span class="rzpos">${i+1}º</span>${p.cob!=null&&p.cob<PRz('resumo.ruptura_dias')?`<span class="rzrupt" title="Estoque para ${Math.max(0,Math.round(p.cob))} dia(s)">${icon('alert')} ${p.saldo<=0?'Sem estoque':`${Math.max(0,Math.round(p.cob))} dias`}</span>`:''}</div>
    <strong title="${esc(p.t)}">${esc(p.t)}</strong><div class="rzprod-n"><span>${curto(p.v)}</span><small>${p.q} un.</small></div>
    <div class="rzprod-b"><i style="width:${W(p.v/mx*100)}%"></i></div><div class="rzprod-r">${spark(p.sem,'fino')}${p.m!=null?`<span class="rzmg ${p.m<.05?'bad':p.m<.15?'warn':'ok'}" title="Margem de contribuição">${p1(p.m)}</span>`:''}</div></article>`).join('')}</div></section>`}
 

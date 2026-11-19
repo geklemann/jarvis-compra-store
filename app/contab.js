@@ -33,24 +33,25 @@ const CAT={'Compra de mercadorias':'1.1.04','Mercadorias para revenda':'1.1.04',
 const PELO_NOME=[[/mercadoria|revenda/,'1.1.04'],[/simples nacional|\bdas\b/,'4.2.05'],[/icms|difal|gnre/,'4.2.02'],[/tarifa.*banc|banc.*tarifa/,'6.5.01'],[/tarifa|comiss/,'6.1.01'],[/frete|coleta|transport/,'6.1.02'],[/marketing|anuncio|publicidade|propaganda/,'6.1.03'],[/embalage/,'5.1.02'],
  [/pro.?labore/,'6.2.02'],[/salari|folha|encargo|fgts|inss|ferias/,'6.2.01'],[/alugu|condominio/,'6.3.01'],[/\bluz\b|energia|agua|internet|telefon/,'6.3.02'],[/contab|honorario/,'6.3.03'],[/sistema|software|assinatura/,'6.3.06'],[/seguro/,'6.3.07'],[/juro|multa/,'6.5.02']];
 const contaCat=c=>{const m=db.gerencial?.contabil?.mapa?.[c]||CAT[c];if(m)return m;const n=normalized(c||'');return PELO_NOME.find(([re])=>re.test(n))?.[1]||'6.9.01'};
-const PLAT={'Mercado Livre':'01','Shopee':'02','Magalu':'03'};const pl=p=>PLAT[p]||'09';
+// Contas de cada canal de venda (a receber e receita): do cadastro de canais (Cadastros › Canais de venda).
+const contasCanal=p=>window.Canais.contas(p);
 
 // ─────────────── Tributos sobre vendas (competência) ───────────────
 // Provisiona ICMS/DIFAL/PIS/COFINS pela alíquota efetiva do escritório (tributos ÷ receita do balancete do mês);
 // sem balancete no mês, usa a última alíquota conhecida. Os pagamentos (GNRE/DARE/DARF de PIS-COFINS) baixam a provisão.
 // No Simples Nacional (regime cadastrado em Regras fiscais) a provisão é o DAS sobre a receita (Anexo I, comércio) mais o
 // DIFAL por UF: sem ICMS próprio, PIS, COFINS, IRPJ e CSLL separados (estão dentro do DAS).
-const cfg={provisao:true};try{Object.assign(cfg,JSON.parse(localStorage.getItem('eb_contab')||'{}'))}catch{}
-function aliquotas(meses){const out=new Map();let ult=null;for(const m of meses){let r=null;try{const d=window.Gestao?.dreMes?.(m);if(d?.fonte==='balancete'&&d.v?.receita>0)r=-(d.v.impostos||0)/d.v.receita}catch{}if(r!=null&&r>0&&r<0.6){ult={r,m,fonte:'balancete'};out.set(m,ult)}else if(ult)out.set(m,{r:ult.r,m:ult.m,fonte:'estimada'})}return out}
+const P=()=>window.Parametros,FX=()=>window.Parametros.fiscal;
+function aliquotas(meses){const out=new Map(),max=P().get('fiscal.efetiva_max')/100;let ult=null;for(const m of meses){let r=null;try{const d=window.Gestao?.dreMes?.(m);if(d?.fonte==='balancete'&&d.v?.receita>0)r=-(d.v.impostos||0)/d.v.receita}catch{}if(r!=null&&r>0&&r<max){ult={r,m,fonte:'balancete'};out.set(m,ult)}else if(ult)out.set(m,{r:ult.r,m:ult.m,fonte:'estimada'})}return out}
 const TRIB=new Set(['ICMS DIFAL / GNRE','PIS e COFINS']);
-const simples=()=>/simples/i.test(String(db.gerencial?.fiscal?.regime||window.Marca?.regime?.()||''));
+const simples=()=>/simples/i.test(String(db.gerencial?.fiscal?.regime||window.Marca?.regime?.()||P().get('fiscal.regime_padrao')));
 const ehDas=c=>/simples nacional|\bdas\b/i.test(c||'');
 const ehTrib=c=>TRIB.has(c)||/difal|gnre/i.test(c||'')||(simples()&&ehDas(c));
-// Anexo I (comércio, LC 123/2006 com a LC 155/2016): [receita bruta de 12 meses até, alíquota nominal %, parcela a deduzir].
-const ANEXO1=[[180000,4,0],[360000,7.3,5940],[720000,9.5,13860],[1800000,10.7,22500],[3600000,14.3,87300],[4800000,19,378000]];
-function aliqSimples(rbt12){if(!(rbt12>0))return 0.04;const f=ANEXO1.find(x=>rbt12<=x[0])||ANEXO1[5];return Math.max(0,(rbt12*f[1]/100-f[2])/rbt12)}
-const provisaoOn=()=>db.gerencial?.contabil?.provisao??cfg.provisao;
-const UFS=['AC','AL','AM','AP','BA','CE','DF','ES','GO','MA','MG','MS','MT','PA','PB','PE','PI','PR','RJ','RN','RO','RR','RS','SC','SE','SP','TO'];
+// Tabela do Simples Nacional (Anexo I, comércio, ou o escolhido em Parâmetros): web/parametros-base.js › aliqSimples.
+const aliqSimples=rbt12=>FX().aliqSimples(rbt12);
+// Tributos por competência: o parâmetro da empresa (antes a chave desta tela ficava só no navegador, eb_contab).
+const provisaoOn=()=>P().get('contabil.provisao');
+const UFS=window.Parametros.fiscal.UFS;
 const NOME_UF={ALAGOAS:'AL',PIAUI:'PI',' PI ':'PI'};
 // UF de uma guia (GNRE/DARE/DUA): "SEFAZ-RJ/GNRE", "GNRE-PA", "GNRE ALAGOAS ONLINE", "SEFAZ-SC/DARE"…
 function ufGuia(txt){const t=' '+String(txt||'').toUpperCase()+' ';const m=t.match(/SEFAZ[- ]?([A-Z]{2})\b|GNRE[- ]([A-Z]{2})\b|\b([A-Z]{2})[- ]SEFAZ\b|SEFAZ ([A-Z]{2})\b/);const u=m&&(m[1]||m[2]||m[3]||m[4]);if(u&&UFS.includes(u))return u;for(const [k,v] of Object.entries(NOME_UF))if(t.includes(k))return v;return null}
@@ -63,22 +64,21 @@ let difalUF=new Map();
 const mesAnt=d=>{const [y,mo]=d.split('-').map(Number);return mo===1?`${y-1}-12`:`${y}-${String(mo-1).padStart(2,'0')}`};
 function rateioDifal(v,d){const x=d&&(difalUF.get(mesAnt(d))||difalUF.get(d.slice(0,7))),l=Object.entries(x||{}).filter(([,y])=>y>0),t=l.reduce((a,[,y])=>a+y,0);if(!t)return [['2.1.02.02.99',v]];
  let resto=Math.round(v*100)/100;return l.map(([u,y],i)=>{const p=i===l.length-1?resto:Math.round(v*y/t*100)/100;resto=Math.round((resto-p)*100)/100;return ['2.1.02.02.'+u,p]})}
-const linhasTrib=(conta,v,d)=>{if(conta==='2.1.02.02.99')return rateioDifal(v,d);if(conta!=='PC')return [[conta,v]];const pis=Math.round(v*65/365*100)/100;return [['2.1.02.03',pis],['2.1.02.04',Math.round((v-pis)*100)/100]]};
-// Tributos de cada venda pelas mesmas regras do emissor de NF-e (Parametrização fiscal): ICMS próprio pela alíquota
-// interestadual (4% importados; 7% N/NE/CO/ES; 12% S/SE) ou interna na UF do emitente; DIFAL + FCP ao destino para não contribuinte;
-// PIS e COFINS como o escritório apura: sobre a receita menos o ICMS próprio.
-const ALIQ_INT={AC:19,AL:19,AM:20,AP:18,BA:20.5,CE:20,DF:20,ES:17,GO:19,MA:23,MG:18,MS:17,MT:17,PA:19,PB:20,PE:20.5,PI:22.5,PR:19.5,RJ:20,RN:20,RO:19.5,RR:20,RS:17,SC:17,SE:19,SP:18,TO:20};
-const INTER7=new Set(['AC','AL','AM','AP','BA','CE','DF','ES','GO','MA','MS','MT','PA','PB','PE','PI','RN','RO','RR','SE','TO']),IMPORT=new Set([1,2,3,8]),FCP0={AL:1,RJ:2};
-function tributosMes(orders,origem,diretas=new Map()){const F=db.gerencial?.fiscal||{},pu=F.por_uf||{},r2=v=>Math.round(v*100)/100,out=new Map();
- const ue=ufEmit(),intUF=Number(F.aliq_icms_interna)||ALIQ_INT[ue]||18,pis=(Number(F.aliq_pis)||0.65)/100,cof=(Number(F.aliq_cofins)||3)/100,og0=Number(F.origem_padrao??5);
+const linhasTrib=(conta,v,d)=>{if(conta==='2.1.02.02.99')return rateioDifal(v,d);if(conta!=='PC')return [[conta,v]];const F=FX().cfg(),ap=FX().aliqPis(F),ac=FX().aliqCofins(F),pis=Math.round(v*(ap+ac>0?ap/(ap+ac):0)*100)/100;return [['2.1.02.03',pis],['2.1.02.04',Math.round((v-pis)*100)/100]]};
+// Tributos de cada venda pelas mesmas regras do emissor de NF-e (Parametrização fiscal), com as tabelas e fórmulas comuns
+// de web/parametros-base.js (Parametros.fiscal): ICMS próprio pela alíquota interestadual (4% importados; 7% N/NE/CO/ES;
+// 12% S/SE) ou interna na UF do emitente; DIFAL + FCP ao destino para não contribuinte; PIS e COFINS sobre a receita menos
+// o ICMS, o DIFAL e o FCP quando "excluir o ICMS da base" está ligado em Regras fiscais (o padrão, como o emissor).
+function tributosMes(orders,origem,diretas=new Map()){const X=FX(),F=X.cfg(),pu=F.por_uf||{},r2=v=>Math.round(v*100)/100,out=new Map();
+ const ue=ufEmit(),intUF=X.icmsInterno(F),pis=X.aliqPis(F)/100,cof=X.aliqCofins(F)/100,og0=X.taxa(F.origem_padrao,5);
  for(const o of orders){const m=o.date.slice(0,7),U=String(o.state||o.customer?.state||ue||'').toUpperCase(),g=Number(o.gross)||0;if(!g)continue;
   const x=out.get(m)||{receita:0,icms:0,difal:{},pis:0,cofins:0};x.receita+=g;const itens=(o.items||[]).filter(i=>Number(i.qty)*Number(i.price)>0),soma=itens.reduce((s,i)=>s+i.qty*i.price,0);
   const partes=itens.length?itens.map(i=>({og:origem.get(String(i.sku||'').trim())??og0,v:g*i.qty*i.price/soma})):[{og:og0,v:g}];
-  const interno=!U||U===ue,interna=pu[U]?.interna??(F.aliquotas||{})[U]??ALIQ_INT[U]??18,fcp=pu[U]?.fcp??FCP0[U]??0,contrib=String(o.customer?.doc||'').replace(/\D/g,'').length===14&&o.customer?.ie;
-  for(const p of partes){const inter=interno?intUF:IMPORT.has(Number(p.og))?4:(pu[U]?.inter||(INTER7.has(U)?7:12));x.icms+=r2(p.v*inter/100);
+  const interno=!U||U===ue,interna=X.internaDestino(U,F),fcp=X.fcpDestino(U,F),contrib=String(o.customer?.doc||'').replace(/\D/g,'').length===14&&o.customer?.ie;
+  for(const p of partes){const inter=interno?intUF:X.interestadual(U,p.og,F);x.icms+=r2(p.v*inter/100);
    if(!interno&&!contrib&&pu[U]?.difal!==false)x.difal[U]=(x.difal[U]||0)+r2(p.v*(Math.max(0,interna-inter)+fcp)/100)}
   out.set(m,x)}
- for(const x of out.values()){const b=x.receita-x.icms;x.pis=r2(b*pis);x.cofins=r2(b*cof)}
+ for(const x of out.values()){const dif=Object.values(x.difal).reduce((s,v)=>s+v,0),b=X.basePisCofins({base:x.receita,icms:x.icms,difal:dif},F);x.pis=r2(b*pis);x.cofins=r2(b*cof)}
  // DAS: alíquota efetiva do Anexo I pela receita dos 12 meses anteriores (início de atividade: média dos meses × 12),
  // ou a fixada em Regras fiscais. A base do DAS inclui as vendas diretas (atacado) faturadas.
  for(const [m,v] of diretas){const x=out.get(m)||{receita:0,icms:0,difal:{},pis:0,cofins:0};x.diretas=v;out.set(m,x)}
@@ -87,11 +87,11 @@ function tributosMes(orders,origem,diretas=new Map()){const F=db.gerencial?.fisc
   x.rbt12=ant.length>=12?soma:ant.length?soma/ant.length*12:rs(x)*12;x.aliqDas=fixa>0?fixa/100:aliqSimples(x.rbt12);x.das=r2(rs(x)*x.aliqDas)}
  return out}
 const mesMenos=(m,n)=>{const [y,mo]=m.split('-').map(Number),d=new Date(y,mo-1-n,1);return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')};
-function creditoCompras(){const F=db.gerencial?.fiscal||{};if(Number(F.credito_icms_compras)>0)return {r:Number(F.credito_icms_compras)/100,fonte:'parametrização'};
+function creditoCompras(){const F=db.gerencial?.fiscal||{},lo=P().get('fiscal.credito_min')/100,hi=P().get('fiscal.credito_max')/100;if(Number(F.credito_icms_compras)>0)return {r:Number(F.credito_icms_compras)/100,fonte:'parametrização'};
  const meses=[...new Set((db.accLines||[]).map(l=>l.month))].sort().reverse();
  for(const m of meses){const L=(db.accLines||[]).filter(l=>l.month===m&&String(l.conta||'').split('.').length>=5),e=L.find(l=>/ESTOQUE DE MERCADORIA/i.test(l.descricao||'')),c=L.find(l=>/CUSTO DAS MERCADORIAS VENDIDAS/i.test(l.descricao||''));
-  if(!e||!(Number(e.debito)>1000))continue;const r=(Number(e.credito)-(Number(c?.debito)||0))/Number(e.debito);if(r>0.03&&r<0.2)return {r,fonte:'balancete de '+m.slice(5)+'/'+m.slice(0,4)}}
- return {r:0.12,fonte:'padrão 12%'}}
+  if(!e||!(Number(e.debito)>1000))continue;const r=(Number(e.credito)-(Number(c?.debito)||0))/Number(e.debito);if(r>lo&&r<hi)return {r,fonte:'balancete de '+m.slice(5)+'/'+m.slice(0,4)}}
+ const pad=P().get('fiscal.credito_icms');return {r:pad/100,fonte:'padrão '+String(pad).replace('.',',')+'%'}}
 // Calibração pelo que o escritório escriturou (balancete): fator por componente; meses sem balancete usam o último fator.
 function escritorioTrib(m){const L=(db.accLines||[]).filter(l=>l.month===m&&(l.kind||'balancete')==='balancete'&&/^3\.1\.02\.02\.\d/.test(l.conta||''));if(!L.length)return null;
  const v=re=>L.filter(l=>re.test(l.descricao||'')).reduce((s,l)=>s+(Number(l.debito)||0)-(Number(l.credito)||0),0);return {difal:v(/DIFAL|FCP|FUNDO/i),icms:v(/^ICMS(?!.*(DIFAL|FCP))/i),pis:v(/^PIS/i),cofins:v(/^COFINS/i),das:v(/SIMPLES|\bDAS\b/i)}}
@@ -101,6 +101,8 @@ let cache=null;let aliqCache=new Map(),tribInfo=new Map(),credInfo=null;
 function contas(){const m=new Map(PLANO.map(([c,n,t])=>[c,{c,n,t}]));for(const u of [...UFS.filter(u=>u!==ufEmit()),'99'])m.set('2.1.02.02.'+u,{c:'2.1.02.02.'+u,n:u==='99'?'DIFAL a recolher · UF a identificar':'DIFAL/FCP a recolher · '+u,t:'P'});let i=1,j=1;
  for(const a of db.bankAccounts||[]){const cod=a.tipo==='aplicacao'?`1.1.02.${String(j++).padStart(2,'0')}`:`1.1.01.${String(i++).padStart(2,'0')}`;m.set(cod,{c:cod,n:a.nome,t:'A',banco:a.id})}
  // Personalização do plano (gerencial.plano): nomes, contas novas e contas removidas.
+ // Contas próprias de um canal criado no cadastro (ex.: Amazon), quando ainda não existem no plano.
+ for(const c of window.Canais.lista()){const {receber,receita}=c.contas||{};if(receber&&!m.has(receber))m.set(receber,{c:receber,n:c.nome,t:'A'});if(receita&&!m.has(receita))m.set(receita,{c:receita,n:'Vendas '+c.nome,t:'R'})}
  const p=db.gerencial?.plano||{};for(const [c,n] of Object.entries(p.nomes||{}))if(m.has(c))m.get(c).n=n;for(const [c,x] of Object.entries(p.novas||{}))m.set(c,{c,n:x.n,t:x.t||'D',nova:true});for(const c of p.removidas||[])if(!m.get(c)?.banco)m.delete(c);return m}
 // Impressão digital do que o diário lê e que muda NO LUGAR, sem mudar a quantidade de linhas: conciliar o extrato,
 // pagar ou editar um título, a tarifa, o frete ou os itens de um pedido, o custo de um produto, uma nota de entrada. Junto
@@ -116,7 +118,7 @@ function digital(){let h=0;const n=v=>{h=(Math.imul(h,31)+Math.round((Number(v)|
  for(const v of window.VendaDireta?.vendas?.()||[]){t(v.status);t(v.emissao);n(v.total)}for(const r of window.VendaDireta?.titulos?.()||[]){t(r.status);t(r.recebido_em);n(r.valor_recebido)}
  for(const p of window.Estoque?.lista?.()||[]){n(p.custo);t(p.origem)}return h}
 const listas=()=>[db,db.orders,db.bankTx,db.payables,db.purchases,db.products,db.bankAccounts,db.accLines];
-function diario(){const posEstoque=Math.round((window.Estoque?.lista?.()||[]).filter(p=>!p.ignorar&&p.formato!=='V'&&Number(p.saldo)>0&&Number(p.custo)>0).reduce((s,p)=>s+Number(p.saldo)*Number(p.custo),0)*100)/100;const k=[posEstoque,db.gerencial?.contabil?.custo_cmv,JSON.stringify(db.gerencial?.fiscal||{}),(db.accLines||[]).length,(window.VendaDireta?.vendas?.()||[]).length,(window.VendaDireta?.titulos?.()||[]).filter(r=>r.status==='recebido').length,provisaoOn(),db.gerencial?.contabil?.aliq_efetiva,JSON.stringify(db.gerencial?.contabil?.mapa||{}),JSON.stringify(db.gerencial?.plano||{}),db.orders.length,(db.bankTx||[]).length,(db.payables||[]).length,(db.purchases||[]).length,(db.bankAccounts||[]).length,(window.Estoque?.lista?.()||[]).length,digital()].join('|'),ls=listas();if(cache?.k===k&&cache.ls.every((x,i)=>x===ls[i]))return cache.v;
+function diario(){const posEstoque=Math.round((window.Estoque?.lista?.()||[]).filter(p=>!p.ignorar&&p.formato!=='V'&&Number(p.saldo)>0&&Number(p.custo)>0).reduce((s,p)=>s+Number(p.saldo)*Number(p.custo),0)*100)/100;const k=[posEstoque,db.gerencial?.contabil?.custo_cmv,JSON.stringify(db.gerencial?.fiscal||{}),(db.accLines||[]).length,(window.VendaDireta?.vendas?.()||[]).length,(window.VendaDireta?.titulos?.()||[]).filter(r=>r.status==='recebido').length,provisaoOn(),db.gerencial?.contabil?.aliq_efetiva,JSON.stringify(db.gerencial?.contabil?.mapa||{}),JSON.stringify(db.gerencial?.plano||{}),db.orders.length,(db.bankTx||[]).length,(db.payables||[]).length,(db.purchases||[]).length,(db.bankAccounts||[]).length,(window.Estoque?.lista?.()||[]).length,P().versao(),digital()].join('|'),ls=listas();if(cache?.k===k&&cache.ls.every((x,i)=>x===ls[i]))return cache.v;
  const plano=contas(),banco=new Map([...plano.values()].filter(x=>x.banco).map(x=>[x.banco,x.c])),L=[];
  const lanc=(d,hist,orig,linhas)=>{linhas=linhas.filter(([,v])=>Math.abs(v)>=0.005);if(linhas.length)L.push({d,hist,orig,l:linhas})}; // l: [conta, valor>0 débito / <0 crédito]
  const par=(d,hist,orig,deb,cred,v)=>{v=Math.round(v*100)/100;if(!v)return;if(v<0){[deb,cred]=[cred,deb];v=-v}lanc(d,hist,orig,[[deb,v],[cred,-v]])};
@@ -140,20 +142,20 @@ function diario(){const posEstoque=Math.round((window.Estoque?.lista?.()||[]).fi
   const vd=new Map();if(sn)for(const v of window.VendaDireta?.vendas?.()||[])if(v.status==='faturado'&&v.emissao){const m=String(v.emissao).slice(0,7);vd.set(m,(vd.get(m)||0)+(Number(v.total)||0))}
   const tm=tributosMes(db.orders,origem,vd);let fat={icms:1,difal:1,pis:1,cofins:1,das:1,m:null};const COMP=sn?['das','difal']:['icms','difal','pis','cofins'];
   for(const m of meses){const t=tm.get(m);if(!t)continue;const dif=Object.values(t.difal).reduce((s,v)=>s+v,0),e=escritorioTrib(m);
-   let exato=null;if(e){const f=(a,b,lim)=>b>0&&a>0?(lim?Math.min(1.35,Math.max(0.75,a/b)):a/b):1;fat={icms:f(e.icms,t.icms,1),difal:f(e.difal,dif,1),pis:f(e.pis,t.pis,1),cofins:f(e.cofins,t.cofins,1),das:f(e.das,t.das,1),m};exato={icms:f(e.icms,t.icms),difal:f(e.difal,dif),pis:f(e.pis,t.pis),cofins:f(e.cofins,t.cofins),das:f(e.das,t.das),m}}
+   let exato=null;if(e){const cmin=P().get('fiscal.calib_min'),cmax=P().get('fiscal.calib_max'),f=(a,b,lim)=>b>0&&a>0?(lim?Math.min(cmax,Math.max(cmin,a/b)):a/b):1;fat={icms:f(e.icms,t.icms,1),difal:f(e.difal,dif,1),pis:f(e.pis,t.pis,1),cofins:f(e.cofins,t.cofins,1),das:f(e.das,t.das,1),m};exato={icms:f(e.icms,t.icms),difal:f(e.difal,dif),pis:f(e.pis,t.pis),cofins:f(e.cofins,t.cofins),das:f(e.das,t.das),m}}
    // No mês com balancete o valor é o do escritório; nos demais, o fator (limitado) do último balancete.
    let k={...(exato||fat)};const a=aliqCache.get(m);if(fixa>0&&a){const tot={icms:t.icms,difal:dif,pis:t.pis,cofins:t.cofins,das:t.das},bruto=COMP.reduce((x,c)=>x+tot[c]*k[c],0),alvo=t.receita*a.r;if(bruto>0)for(const c of COMP)k[c]*=alvo/bruto}
-   const p2=x=>(x*100).toFixed(2).replace('.',',')+'%',base=sn?`Simples Nacional, DAS ${p2(t.aliqDas*k.das)} (${Number(db.gerencial?.fiscal?.aliq_simples)>0?'Regras fiscais':'Anexo I '+p2(t.aliqDas)}`:'regras da NF-e',cal=k.m?` calibrad${sn?'o':'as'} pelo balancete de ${k.m.slice(5)}/${k.m.slice(0,4)}`:'',ref=k.m===m?'conforme balancete do escritório':base+cal+(sn?')':''),mm=`${m.slice(5)}/${m.slice(0,4)}`,o={tipo:'provisao',id:m},d=fim(m);
+   const p2=x=>(x*100).toFixed(2).replace('.',',')+'%',base=sn?`Simples Nacional, DAS ${p2(t.aliqDas*k.das)} (${Number(db.gerencial?.fiscal?.aliq_simples)>0?'Regras fiscais':'Anexo '+P().get('fiscal.simples_anexo')+' '+p2(t.aliqDas)}`:'regras da NF-e',cal=k.m?` calibrad${sn?'o':'as'} pelo balancete de ${k.m.slice(5)}/${k.m.slice(0,4)}`:'',ref=k.m===m?'conforme balancete do escritório':base+cal+(sn?')':''),mm=`${m.slice(5)}/${m.slice(0,4)}`,o={tipo:'provisao',id:m},d=fim(m);
    if(sn)par(d,`Simples Nacional (DAS) sobre vendas de ${mm} · ${ref}`,o,'4.2.04.05','2.1.02.05',t.das*k.das);else par(d,`ICMS próprio sobre vendas de ${mm} · ${ref}`,o,'4.2.04.01','2.1.02.01',t.icms*k.icms);
    const pu={};for(const [u,v] of Object.entries(t.difal).sort()){pu[u]=v*k.difal;par(d,`ICMS DIFAL/FCP · ${u} · vendas de ${mm}`,o,'4.2.04.02','2.1.02.02.'+u,v*k.difal)}difalUF.set(m,pu);
    if(!sn){par(d,`PIS sobre vendas de ${mm} · ${ref}`,o,'4.2.04.03','2.1.02.03',t.pis*k.pis);par(d,`COFINS sobre vendas de ${mm} · ${ref}`,o,'4.2.04.04','2.1.02.04',t.cofins*k.cofins)}
    tribInfo.set(m,sn?{ref,simples:true,receita:t.receita+(t.diretas||0),aliqDas:t.aliqDas*k.das,rbt12:t.rbt12,das:t.das*k.das,difal:dif*k.difal,icms:0,pis:0,cofins:0}:{ref,receita:t.receita,icms:t.icms*k.icms,difal:dif*k.difal,pis:t.pis*k.pis,cofins:t.cofins*k.cofins})}
   // IRPJ e CSLL no lucro presumido (comércio): 8% e 12% da receita bruta menos devoluções; adicional de 10% do IRPJ
-  // sobre a base que passa de R$ 20 mil no mês. É exatamente como o escritório provisiona mês a mês.
-  const Fz=db.gerencial?.fiscal||{};if(!sn&&/presumido/i.test(Fz.regime||'Lucro Presumido')){const dev=new Map();for(const n of db.purchases||[])if(n.tipo==='devolucao'&&n.emissao&&!/rejeit|cancel|denegad/i.test(n.situacao||'')){const m=n.emissao.slice(0,7);dev.set(m,(dev.get(m)||0)+(Number(n.valor)||0))}
-   const pi=(Number(Fz.presuncao_irpj)||8)/100,pc=(Number(Fz.presuncao_csll)||12)/100;
-   for(const m of meses){const b=Math.max(0,(rec.get(m)||0)-(dev.get(m)||0)),bi=b*pi,irpj=bi*0.15+Math.max(0,bi-20000)*0.10,csll=b*pc*0.09,mm=`${m.slice(5)}/${m.slice(0,4)}`,o={tipo:'provisao',id:m};
-    par(fim(m),`Provisão IRPJ de ${mm} · presumido ${Math.round(pi*100)}% da receita`,o,'6.8.02','2.1.03.01',irpj);par(fim(m),`Provisão CSLL de ${mm} · presumido ${Math.round(pc*100)}% da receita`,o,'6.8.03','2.1.03.02',csll);
+  // sobre a base que passa de R$ 20 mil no mês. É exatamente como o escritório provisiona mês a mês. A conta é a de
+  // Parametros.fiscal.irpjCsll (a mesma do tributo dos preços), com a presunção salva em Regras fiscais › Contábil.
+  if(!sn&&/presumido/i.test(FX().regime())){const dev=new Map();for(const n of db.purchases||[])if(n.tipo==='devolucao'&&n.emissao&&!/rejeit|cancel|denegad/i.test(n.situacao||'')){const m=n.emissao.slice(0,7);dev.set(m,(dev.get(m)||0)+(Number(n.valor)||0))}
+   for(const m of meses){const b=Math.max(0,(rec.get(m)||0)-(dev.get(m)||0)),{irpj,csll,pi,pc}=FX().irpjCsll(b),mm=`${m.slice(5)}/${m.slice(0,4)}`,o={tipo:'provisao',id:m};
+    const pz=x=>String(Math.round(x*10000)/100).replace('.',',');par(fim(m),`Provisão IRPJ de ${mm} · presumido ${pz(pi)}% da receita`,o,'6.8.02','2.1.03.01',irpj);par(fim(m),`Provisão CSLL de ${mm} · presumido ${pz(pc)}% da receita`,o,'6.8.03','2.1.03.02',csll);
     const ti=tribInfo.get(m);if(ti)Object.assign(ti,{irpj,csll})}}}
  // Extrato bancário (regime de caixa das contas bancárias).
  const pagosPeloBanco=new Set(),recebidosPeloBanco=new Set(),darfs=[];
@@ -162,7 +164,7 @@ function diario(){const posEstoque=Math.round((window.Estoque?.lista?.()||[]).fi
   if(v.tipo==='recebivel'){for(const id of v.ids||[v.id])recebidosPeloBanco.add(id);par(t.data,`Recebimento · ${v.desc||h}`,o,c,'1.1.05',t.valor);continue}
   if(v.tipo==='payable'){for(const id of v.ids||[v.id])pagosPeloBanco.add(id);o.forn=(db.payables||[]).find(p=>p.id===(v.ids?.[0]||v.id))?.fornecedor||v.desc||'';par(t.data,`Pagamento · ${v.desc||h}`,o,c,'2.1.01',t.valor);continue}
   if(v.tipo==='aplicacao'){par(t.data,`${t.valor<0?'Aplicação':'Resgate'} · ${h}`,o,c,aplicDe(t),t.valor);continue}
-  if(v.tipo==='transferencia'){const d=normalized((v.desc||'')+' '+h);const outra=/mercado ?pago|mercado livre/.test(d)?'1.1.03.01':/shopee/.test(d)?'1.1.03.02':/magalu|magazine luiza/.test(d)?'1.1.03.03':/saque|caixa/.test(d)?'1.1.01.90':'1.1.01.99';par(t.data,v.desc||h,o,c,outra,t.valor);continue}
+  if(v.tipo==='transferencia'){const d=normalized((v.desc||'')+' '+h),cx=window.Canais.canalDoExtrato(d);const outra=cx?cx.contas.receber:/saque|caixa/.test(d)?'1.1.01.90':'1.1.01.99';par(t.data,v.desc||h,o,c,outra,t.valor);continue}
   // Despesa ou receita direto no extrato.
   if(v.tipo==='despesa'&&String(v.id||'').startsWith('EXT-'))pagosPeloBanco.add(v.id);
   const darf=/darf|receita federal/i.test(h+' '+(v.desc||''))&&/impostos e taxas/i.test(v.categoria||t.categoria||'');
@@ -192,19 +194,19 @@ function diario(){const posEstoque=Math.round((window.Estoque?.lista?.()||[]).fi
   for(const m of ms){while(i<ent.length&&ent[i][0]<=m){const [,s,q,v]=ent[i++];const a=acc.get(s)||{q:0,v:0};a.q+=q;a.v+=v;acc.set(s,a)}for(const [s,a] of acc)medioMes.set(m+'|'+s,a.v/a.q)}}
  const custoDe=(s,m)=>medioMes.get(m+'|'+s)??custo.get(s);
  let semCusto=0;
- for(const o of db.orders){const a=`1.1.03.${pl(o.platform)}`,r=`4.1.${pl(o.platform)}`,orig={tipo:'pedido',id:o.id};
+ for(const o of db.orders){const cc=contasCanal(o.platform),a=cc.receber,r=cc.receita,orig={tipo:'pedido',id:o.id};
   const linhas=[[a,o.gross],[r,-o.gross]];if(o.fee){linhas.push(['6.1.01',o.fee],[a,-o.fee])}// Frete só é custo do vendedor quando vem da API do marketplace; no pedido do Bling é o frete da nota (pago pelo comprador).
   if(o.shipping&&/API/.test(o.source||'')&&!/Bling/.test(o.source||'')){linhas.push(['6.1.02',o.shipping],[a,-o.shipping])}
   lanc(o.date,`Venda ${o.platform} · pedido ${o.id}`,orig,linhas);
   let cmv=0;for(const it of o.items||[]){const c=custoDe(String(it.sku||'').trim(),o.date.slice(0,7));if(c)cmv+=c*(Number(it.qty)||0);else semCusto++}
   if(cmv)par(o.date,`CMV · pedido ${o.id}`,orig,'5.1.01','1.1.04',cmv)}
  // DARF pagos: PIS/COFINS do mês anterior (valor bate com a provisão), IRPJ/CSLL do presumido, ou despesa federal.
- {const presum=provisaoOn()&&!sn&&/presumido/i.test(db.gerencial?.fiscal?.regime||'Lucro Presumido'),perto=(a,b)=>b>0&&Math.abs(a-b)<=Math.max(1,b*0.005);
+ {const presum=provisaoOn()&&!sn&&/presumido/i.test(FX().regime()),tp=P().get('darf.tolerancia_pct')/100,tr=P().get('darf.tolerancia_rs'),perto=(a,b)=>b>0&&Math.abs(a-b)<=Math.max(tr,b*tp);
   for(const {t,c,h,o} of darfs){const v=-t.valor,[y,mo]=t.data.split('-').map(Number),ant=mo===1?`${y-1}-12`:`${y}-${String(mo-1).padStart(2,'0')}`,ti=provisaoOn()?tribInfo.get(ant):null;let l;
    if(ti?.simples&&perto(v,ti.das))l=[['2.1.02.05',v]];
    else if(ti&&perto(v,ti.pis+ti.cofins)){const p=Math.round(v*ti.pis/(ti.pis+ti.cofins)*100)/100;l=[['2.1.02.03',p],['2.1.02.04',Math.round((v-p)*100)/100]]}
    else if(ti&&perto(v,ti.pis))l=[['2.1.02.03',v]];else if(ti&&perto(v,ti.cofins))l=[['2.1.02.04',v]];
-   else if(presum){const ref=tribInfo.get(ant)||tribInfo.get(t.data.slice(0,7)),fi=ref?.irpj&&ref?.csll?ref.irpj/(ref.irpj+ref.csll):0.634,p=Math.round(v*fi*100)/100;l=[['2.1.03.01',p],['2.1.03.02',Math.round((v-p)*100)/100]]}
+   else if(presum){const ref=tribInfo.get(ant)||tribInfo.get(t.data.slice(0,7)),fi=ref?.irpj&&ref?.csll?ref.irpj/(ref.irpj+ref.csll):P().get('darf.fracao_irpj')/100,p=Math.round(v*fi*100)/100;l=[['2.1.03.01',p],['2.1.03.02',Math.round((v-p)*100)/100]]}
    else l=[['6.8.01',v]];
    lanc(t.data,h,o,[[c,t.valor],...l])}}
  // Vendas diretas faturadas: receita contra clientes (pelas parcelas) e CMV pelos itens.
@@ -244,12 +246,12 @@ function dre(){const {ini,fim:f}=periodo(),{s}=saldos(f,ini),mov=c=>{const x=s.g
  const pc=v=>rb?`<span class="caption">${(v/rb*100).toFixed(1).replace('.',',')}%</span>`:'';
  const l=(t,v,cls='',c='')=>`<tr class="${cls}" ${c?`data-ct-conta="${c}"`:''}><td>${t}</td><td class="num">${mf(v)}</td><td class="num">${pc(v)}</td></tr>`;
  return `<div class="grid two"><div class="tablebox"><div class="tabletop"><div><h2>DRE · ${ui.acumulado?'acumulado de '+month.slice(0,4):mesBR(month)}</h2><p class="caption">Gerada pelos lançamentos automáticos. Clique numa linha para ver o razão.</p></div></div><div class="tablewrap"><table class="ctb"><tbody>
- ${l('Receita bruta de vendas',rb,'ctbgrupo')}${l('Mercado Livre',-mov('4.1.01'),'n3 clickrow','4.1.01')}${l('Shopee',-mov('4.1.02'),'n3 clickrow','4.1.02')}${l('Magalu',-mov('4.1.03'),'n3 clickrow','4.1.03')}${l('Vendas diretas (atacado)',-mov('4.1.04'),'n3 clickrow','4.1.04')}${l('Outros canais',-mov('4.1.09'),'n3 clickrow','4.1.09')}
+ ${l('Receita bruta de vendas',rb,'ctbgrupo')}${[...new Map(window.Canais.lista().filter(c=>c.contas.receita&&!['4.1.04','4.1.09'].includes(c.contas.receita)).map(c=>[c.contas.receita,c.nome])).entries()].map(([ct,nm])=>l(esc(nm),-mov(ct),'n3 clickrow',esc(ct))).join('')}${l('Vendas diretas (atacado)',-mov('4.1.04'),'n3 clickrow','4.1.04')}${l('Outros canais',-mov('4.1.09'),'n3 clickrow','4.1.09')}
  ${l(simples()?'(−) Deduções (DAS do Simples, DIFAL, devoluções)':'(−) Deduções (ICMS/DIFAL, PIS/COFINS, devoluções)',-ded,'n3')}${l('Receita líquida',rl,'ctbgrupo')}
  ${l('(−) CMV',-mov('5.1.01'),'n3 clickrow','5.1.01')}${l('(−) Embalagens',-mov('5.1.02'),'n3 clickrow','5.1.02')}${l('Lucro bruto',lb,'ctbgrupo')}
  ${l('(−) Tarifas de marketplace',-mov('6.1.01'),'n3 clickrow','6.1.01')}${l('(−) Fretes',-mov('6.1.02'),'n3 clickrow','6.1.02')}${l('(−) Marketing',-mov('6.1.03'),'n3 clickrow','6.1.03')}${l('(−) Pessoal',-pes,'n3')}${l('(−) Administrativas',-adm,'n3')}${l('(−) Impostos e taxas',-imp,'n3')}${l('(−) Outras',-out,'n3')}
  ${l('Resultado operacional',ebitda,'ctbgrupo')}${l('Resultado financeiro',fin,'n3')}${l(simples()?'(−) IRPJ, CSLL e DARF federais <span class="caption">(no Simples, dentro do DAS)</span>':'(−) IRPJ, CSLL e DARF federais',-ir,'n3 clickrow','6.8.01')}${l('Resultado do período',res,'ctbgrupo ctbfinal')}</tbody></table></div></div>
- <div class="card"><h2>Como ler</h2><label class="check-l"><input type="checkbox" class="check" id="ctProv" ${cfg.provisao?'checked':''}> Tributos sobre vendas por competência (${simples()?'DAS do Simples Nacional e DIFAL por UF':'ICMS, DIFAL por UF, PIS e COFINS'}${(t=>t?' · '+(((t.das||0)+t.icms+t.difal+t.pis+t.cofins)/t.receita*100).toFixed(1).replace('.',',')+'% da receita, '+esc(t.ref):'')(tribInfo.get(month))})</label><p class="caption">Desligado, os tributos entram só quando são pagos (${simples()?'DAS e GNRE':'GNRE/DARE'}). O regime vem de Fiscal › Regras › Regras fiscais${simples()?' (Simples Nacional)':''}.</p><p class="caption" style="line-height:1.8">A DRE sai direto do diário: vendas e tarifas pelos pedidos, CMV pelos itens vendidos × custo do produto (Bling/Tabela de preços), notas e títulos pela data de emissão, e o que foi pago direto no banco (GNRE, aluguel, pró-labore…) pela data do extrato.<br><br>Compare com o balancete do escritório em <button class="small quiet" data-nav="contabil">DRE e Contabilidade</button> para achar diferenças de classificação ou de data.${diario().semCusto?`<br><br><span class="gold">${diario().semCusto} item(ns) vendido(s) sem custo cadastrado — o CMV fica subestimado. Cadastre o custo em Cadastros › Produtos › Custos e embalagens.</span>`:''}</p></div></div>`}
+ <div class="card"><h2>Como ler</h2><label class="check-l"><input type="checkbox" class="check" id="ctProv" ${provisaoOn()?'checked':''}> Tributos sobre vendas por competência (${simples()?'DAS do Simples Nacional e DIFAL por UF':'ICMS, DIFAL por UF, PIS e COFINS'}${(t=>t?' · '+(((t.das||0)+t.icms+t.difal+t.pis+t.cofins)/t.receita*100).toFixed(1).replace('.',',')+'% da receita, '+esc(t.ref):'')(tribInfo.get(month))})</label><p class="caption">Desligado, os tributos entram só quando são pagos (${simples()?'DAS e GNRE':'GNRE/DARE'}). O regime vem de Fiscal › Regras › Regras fiscais${simples()?' (Simples Nacional)':''}.</p><p class="caption" style="line-height:1.8">A DRE sai direto do diário: vendas e tarifas pelos pedidos, CMV pelos itens vendidos × custo do produto (Bling/Tabela de preços), notas e títulos pela data de emissão, e o que foi pago direto no banco (GNRE, aluguel, pró-labore…) pela data do extrato.<br><br>Compare com o balancete do escritório em <button class="small quiet" data-nav="contabil">DRE e Contabilidade</button> para achar diferenças de classificação ou de data.${diario().semCusto?`<br><br><span class="gold">${diario().semCusto} item(ns) vendido(s) sem custo cadastrado — o CMV fica subestimado. Cadastre o custo em Cadastros › Produtos › Custos e embalagens.</span>`:''}</p></div></div>`}
 
 function balanco(){const {fim:f}=periodo(),{s}=saldos(f),sal=c=>{const x=s.get(c);return x?x.deb-x.cred:0};
  const res=-(sal('4')+sal('5')+sal('6'));const ativo=sal('1')+sal('9'),passivo=-sal('2'),pl=-sal('3')+res;
@@ -342,7 +344,7 @@ function csv(tipo){const {ini,fim:f}=periodo();let cab,linhas;
  else{const {s,plano}=saldos(f,ini);cab=['conta','nome','saldo_anterior','debitos','creditos','saldo_atual'];linhas=[...s.keys()].sort((a,b)=>a.localeCompare(b,undefined,{numeric:true})).map(c=>{const x=s.get(c);return [c,plano.get(c)?.n||c,valorNat(c,x.ant).toFixed(2).replace('.',','),x.deb.toFixed(2).replace('.',','),x.cred.toFixed(2).replace('.',','),valorNat(c,x.ant+x.deb-x.cred).toFixed(2).replace('.',',')]})}
  const txt=[cab,...linhas].map(l=>l.map(x=>`"${String(x).replace(/"/g,'""')}"`).join(';')).join('\n');const a=document.createElement('a');a.href=URL.createObjectURL(new Blob(['﻿'+txt],{type:'text/csv'}));a.download=`${tipo}-${ini}-a-${f}.csv`;a.click()}
 document.addEventListener('click',e=>{const b=e.target.closest('[data-ct-aba],[data-ct-conta],[data-ct-csv]');if(!b)return;const d=b.dataset;if(d.ctAba){ui[abaKey()]=d.ctAba;render()}if(d.ctConta)razao(d.ctConta);if(d.ctCsv)csv(d.ctCsv)});
-function bind(){const pv=$('#ctProv');if(pv)pv.onchange=()=>{cfg.provisao=pv.checked;try{localStorage.setItem('eb_contab',JSON.stringify(cfg))}catch{}cache=null;render()};const a=$('#ctAcum');if(a)a.onchange=()=>{ui.acumulado=a.checked;render()};const i=$('#ctBusca');if(i)i.oninput=e=>{ui.busca=e.target.value;const pos=e.target.selectionStart;render();const n=$('#ctBusca');n.focus();n.setSelectionRange(pos,pos)}}
+function bind(){const pv=$('#ctProv');if(pv)pv.onchange=()=>{P().set('contabil.provisao',pv.checked);cache=null;render()};const a=$('#ctAcum');if(a)a.onchange=()=>{ui.acumulado=a.checked;render()};const i=$('#ctBusca');if(i)i.oninput=e=>{ui.busca=e.target.value;const pos=e.target.selectionStart;render();const n=$('#ctBusca');n.focus();n.setSelectionRange(pos,pos)}}
 addPage('planocontas','ledger','Plano de contas',view,'Contas contábeis personalizáveis: crie, renomeie e exclua contas e escolha onde cada categoria do financeiro é contabilizada.','',bind);
 addPage('contabauto','ledger','Contabilidade automática',view,'Diário, razão, balancete, DRE e balanço em partidas dobradas, gerados sozinhos a partir da operação.','',bind);
 window.Contab={simples,aliqSimples,contaCategoria:c=>contaCat(c),tributos:m=>{diario();return tribInfo.get(m)||null},creditoCompras:()=>{diario();return credInfo},ufGuia,diario,saldos,plano:()=>[...contas().values()],mapaCategorias:()=>({...CAT})};

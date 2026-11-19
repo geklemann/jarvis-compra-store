@@ -10,7 +10,8 @@ Object.assign(paths,{
  trash:'M3 6h18 M8 6V4h8v2 M19 6l-1 14H6L5 6',
  save:'M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z M17 21v-8H7v8 M7 3v5h8',
 });
-const CANAIS=['Mercado Livre','Mercado Livre Clássico','Shopee','Magalu','Site próprio'];
+// Regras de preço (tipos de anúncio) do cadastro de canais: as colunas de preço da planilha.
+const CANAIS_PRECO=()=>window.Canais?.regras?.().map(r=>r.id)||['Mercado Livre','Mercado Livre Clássico','Shopee','Magalu','Site próprio'];
 const pctf=n=>(Number.isFinite(n)?n:0).toLocaleString('pt-BR',{maximumFractionDigits:1})+'%';
 const n2=v=>Number(v)||0;
 const monthLabel=m=>new Date(m+'-15T12:00:00').toLocaleDateString('pt-BR',{month:'short',year:'2-digit'});
@@ -201,8 +202,9 @@ function defaultsPricing(){return {impostos:8,ads:3,fixos:5,juros:0,margemAlvo:1
 // Fica aqui só a importação da planilha de custos e preços (Custo do produto e Custos e embalagens).
 function importPrecos(){TableImport.open({title:'Importar planilha de preços e custos',hint:'Uma linha por produto. Colunas de preço por canal são opcionais; SKUs já cadastrados são atualizados.',
  fields:[{key:'sku',label:'SKU',required:true,aliases:['codigo','cod','referencia','sku']},{key:'nome',label:'Produto',aliases:['descricao','nome','produto','titulo']},{key:'custo',label:'Custo',required:true,aliases:['custo','custo unitario','preco de custo','cmv','custo medio']},{key:'embalagem',label:'Embalagem',aliases:['embalagem','custo embalagem']},{key:'categoria',label:'Categoria',aliases:['categoria','linha','familia']},
-  {key:'Mercado Livre',label:'Preço Mercado Livre',aliases:['mercado livre','ml','preco ml','preco mercado livre']},{key:'Shopee',label:'Preço Shopee',aliases:['shopee','preco shopee']},{key:'Magalu',label:'Preço Magalu',aliases:['magalu','preco magalu']},{key:'Site próprio',label:'Preço site',aliases:['site','loja','preco site','preco venda','preco']}],
- onConfirm(rows,meta){let n=0;for(const r of rows){if(!r.sku)continue;const p=db.products.find(x=>normalized(x.id)===normalized(r.sku))||(db.products.push({id:r.sku.trim(),precos:{}}),db.products.at(-1));p.nome=r.nome||p.nome||'';p.categoria=r.categoria||p.categoria||'';p.custo=round(Math.abs(TableImport.num(r.custo)));if(r.embalagem)p.embalagem=round(Math.abs(TableImport.num(r.embalagem)));p.precos={...(p.precos||{})};for(const c of CANAIS)if(r[c])p.precos[c]=round(Math.abs(TableImport.num(r[c])));n++}
+  {key:'Mercado Livre',label:'Preço Mercado Livre',aliases:['mercado livre','ml','preco ml','preco mercado livre']},{key:'Shopee',label:'Preço Shopee',aliases:['shopee','preco shopee']},{key:'Magalu',label:'Preço Magalu',aliases:['magalu','preco magalu']},{key:'Site próprio',label:'Preço site',aliases:['site','loja','preco site','preco venda','preco']},
+  ...CANAIS_PRECO().filter(c=>!['Mercado Livre','Mercado Livre Clássico','Shopee','Magalu','Site próprio'].includes(c)).map(c=>({key:c,label:'Preço '+c,aliases:[normalized(c),'preco '+normalized(c)]}))],
+ onConfirm(rows,meta){let n=0;for(const r of rows){if(!r.sku)continue;const p=db.products.find(x=>normalized(x.id)===normalized(r.sku))||(db.products.push({id:r.sku.trim(),precos:{}}),db.products.at(-1));p.nome=r.nome||p.nome||'';p.categoria=r.categoria||p.categoria||'';p.custo=round(Math.abs(TableImport.num(r.custo)));if(r.embalagem)p.embalagem=round(Math.abs(TableImport.num(r.embalagem)));p.precos={...(p.precos||{})};for(const c of CANAIS_PRECO())if(r[c])p.precos[c]=round(Math.abs(TableImport.num(r[c])));n++}
   audit('Tabela de preços importada',`${meta.file}: ${n} produtos`);render();toast(`${n} produtos importados.`)}})}
 
 function exportCsv(name,rows){download(`${name}.csv`,csv(rows));toast('Arquivo CSV gerado.')}

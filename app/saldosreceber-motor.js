@@ -29,16 +29,20 @@ const MESES=['jan','fev','mar','abr','mai','jun','jul','ago','set','out','nov','
 const dBR=d=>d?String(d).slice(0,10).split('-').reverse().join('/'):'';
 
 // Plataformas: o repasse do Mercado Livre cai no Mercado Pago (conta), às vezes importado com plataforma "Mercado Pago".
+// Com o cadastro de canais (window.Canais, Cadastros › Canais de venda) a conta de liquidação e a ordem vêm dele; o motor
+// também roda sozinho (testes), com os canais de sempre.
+const CAD=()=>typeof window!=='undefined'?window.Canais:null;
 const GRUPO={'Mercado Pago':'Mercado Livre'};
-const grupo=p=>GRUPO[p]||p||'Sem plataforma';
+const grupo=p=>{const c=CAD()?.daPlataforma?.(p);return (c&&c.conta===p?c.id:GRUPO[p]&&!CAD()?GRUPO[p]:null)||p||'Sem plataforma'};
 const NOMES={'Mercado Livre':'Mercado Livre / Mercado Pago'};
-const nomeGrupo=g=>NOMES[g]||g;
+const nomeGrupo=g=>{const c=CAD()?.porId?.(g);return c?(c.conta?`${c.nome} / ${c.conta}`:c.nome):NOMES[g]||g};
 // Ordem: Shopee primeiro (em destaque), depois as conhecidas, depois as outras em ordem alfabética.
-const ORDEM=['Shopee','Mercado Livre','Magalu','TikTok Shop'];
-const ordenar=gs=>[...gs].sort((a,b)=>{const ia=ORDEM.indexOf(a),ib=ORDEM.indexOf(b);return (ia<0?99:ia)-(ib<0?99:ib)||a.localeCompare(b,'pt-BR')});
+const ORDEM0=['Shopee','Mercado Livre','Magalu','TikTok Shop'];
+const ordenar=gs=>{const ORDEM=CAD()?.destaques?.()||ORDEM0;return [...gs].sort((a,b)=>{const ia=ORDEM.indexOf(a),ib=ORDEM.indexOf(b);return (ia<0?99:ia)-(ib<0?99:ib)||a.localeCompare(b,'pt-BR')})};
 
-/** Pedido cancelado/reembolsado (mesma regra da Margem): bruto zerado ou taxa ≥ 95% do bruto. */
-const cancelado=o=>!(Number(o.gross)>0)||Number(o.fee)>=Number(o.gross)*0.95;
+/** Pedido cancelado/reembolsado: a regra de todas as telas (Parametros.cancelado, Configurações › Parâmetros: bruto zerado,
+ * taxa ≥ 95% do bruto ou bruto abaixo de 50% dos itens). Sozinho (testes), bruto zerado ou taxa ≥ 95% do bruto. */
+const cancelado=o=>typeof window!=='undefined'&&window.Parametros?.cancelado?window.Parametros.cancelado(o):!(Number(o.gross)>0)||Number(o.fee)>=Number(o.gross)*0.95;
 /** Partes do pedido: venda (bruto), taxa, cancelamento; venda − taxa − cancelamento = líquido (bruto − taxa). */
 function partes(o){const g=r2(o.gross||0),f=r2(o.fee||0);
  if(!cancelado(o))return {venda:g,taxa:f,cancel:0,liquido:r2(g-f),cancelado:false};
@@ -167,8 +171,10 @@ function cancelamentos({orders=[],receipts=[],de,ate,plataforma='',conta=''}){co
 /** Saldo numa data (fim do dia), pela mesma conta da composição — atalho para conferências. */
 function saldoEm(args,data){const {O,R}=recorte(args),E=eventos(O,R);let s=0;for(const e of E)if(e[0]<=data)s+=e[3];return r2(s)}
 
-const FAIXAS=[['avencer','A vencer',-Infinity,0],['d1_7','Vencido 1–7 dias',1,7],['d8_15','Vencido 8–15 dias',8,15],['d16_30','Vencido 16–30 dias',16,30],['d31_60','Vencido 31–60 dias',31,60],['d60','Vencido há mais de 60 dias',61,Infinity]];
-const faixaDe=d=>FAIXAS.find(f=>d>=f[2]&&d<=f[3])[0];
+// Faixas de vencido: os limites de Configurações › Parâmetros (7, 15, 30 e 60 dias no padrão).
+function faixasVencido(){const l=(typeof window!=='undefined'&&window.Parametros?.get?.('receber.faixas'))||[7,15,30,60],out=[['avencer','A vencer',-Infinity,0]];let ini=1;
+ for(const x of l){out.push([`d${ini}_${x}`,`Vencido ${ini}–${x} dias`,ini,x]);ini=x+1}out.push([`d${l.at(-1)}`,`Vencido há mais de ${l.at(-1)} dias`,ini,Infinity]);return out}
+const faixaDe=d=>faixasVencido().find(f=>d>=f[2]&&d<=f[3])[0];
 
 /** Posição numa data: os pedidos que compõem o saldo (líquido − recebido até a data), com a idade, e as liberações sem
  *  vínculo até a data. Idade: dias desde a previsão de liberação (due) ou, sem previsão, desde a data da venda.
@@ -192,7 +198,7 @@ function posicao({orders=[],receipts=[],data,plataforma='',conta=''}){
   .sort((a,b)=>b.data.localeCompare(a.data)||String(a.id).localeCompare(String(b.id)));
  // Ajuste vinculado a pedido entra no recebido do pedido (acima); por isso não aparece entre as soltas.
  const gs=ordenar(new Set([...pedidos.map(p=>p.grupo),...soltas.map(s=>s.grupo)]));
- const faixas=FAIXAS.map(([k,n])=>{const L=pedidos.filter(p=>p.faixa===k);return {faixa:k,nome:n,pedidos:L.length,saldo:r2(L.reduce((s,p)=>s+p.saldo,0))}});
+ const FAIXAS=faixasVencido(),faixas=FAIXAS.map(([k,n])=>{const L=pedidos.filter(p=>p.faixa===k);return {faixa:k,nome:n,pedidos:L.length,saldo:r2(L.reduce((s,p)=>s+p.saldo,0))}});
  const porGrupo=gs.map(g=>{const L=pedidos.filter(p=>p.grupo===g),S=soltas.filter(s=>s.grupo===g),ped=r2(L.reduce((s,p)=>s+p.saldo,0)),sv=r2(S.reduce((s,x)=>s+x.valor,0));
   return {grupo:g,nome:nomeGrupo(g),pedidos:L.length,saldoPedidos:ped,emTransito:r2(L.filter(p=>p.transito).reduce((s,p)=>s+p.saldo,0)),semVinculo:sv,qtdSemVinculo:S.length,saldo:r2(ped-sv),
    faixas:Object.fromEntries(FAIXAS.map(([k])=>[k,r2(L.filter(p=>p.faixa===k).reduce((s,p)=>s+p.saldo,0))]))}});
@@ -223,7 +229,7 @@ function conferencia({pos,grupo:g,informado,dias:limite=15}){const G=pos.porGrup
  if(negativos.length)causas.push({k:'negativos',qtd:negativos.length,valor:soma(negativos),texto:`${negativos.length} pedido(s) com saldo negativo (recebido a mais, reembolso ou repasse antes da nota).`});
  return {grupo:g,jarvis,informado,diferenca:dif,causas}}
 
-const M={r2,dias,somaDias,dBR,grupo,nomeGrupo,ordenar,cancelado,partes,natureza,periodos,composicao,saldoEm,posicao,serie,valorPlataforma,conferencia,COLS,ROTULOS,FAIXAS,
+const M={r2,dias,somaDias,dBR,grupo,nomeGrupo,ordenar,cancelado,partes,natureza,periodos,composicao,saldoEm,posicao,serie,valorPlataforma,conferencia,COLS,ROTULOS,get FAIXAS(){return faixasVencido()},
  dataValida,juntarCancelamento,quandoCancelou,cancelamentos,planoCancelamentos,nomeOrigem,ORIGENS,PRIORIDADE};
 if(typeof window!=='undefined')window.SaldosReceberMotor=M;
 if(typeof module!=='undefined'&&module.exports)module.exports=M;

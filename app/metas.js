@@ -26,10 +26,12 @@ function fracao(m,agora=new Date()){const atual=mesDe(agora);if(m<atual)return 1
 /** Avalia uma meta. R$: esperado hoje = meta × fração; ritmo = realizado ÷ esperado (≥100% no ritmo, ≥90% atenção).
  *  Com projeção de fechamento (vendas no mês corrente), a situação vem dela: projeção ÷ meta, nos mesmos limites.
  *  Margem (%): compara direto (≥ meta no ritmo; até 2 pontos abaixo, atenção). Nos 3 primeiros dias não há julgamento. */
+// Limites: Configurações › Parâmetros › Metas e indicadores (os mesmos do servidor, _shared/parametros.ts › limitesMetas).
+const PMt=k=>window.Parametros.get(k);
 function avaliar({ind,meta,real,frac,dias=30,base=null,proj:pj=null}){
- if(ind==='margem'){if(!base)return {ind,meta,real:null,status:'semdados'};const r=real;return {ind,meta,real:r,status:r>=meta?'ok':r>=meta-2?'atencao':'abaixo',pct:meta?r/meta:null}}
+ if(ind==='margem'){if(!base)return {ind,meta,real:null,status:'semdados'};const r=real;return {ind,meta,real:r,status:r>=meta?'ok':r>=meta-PMt('metas.margem_atencao')?'atencao':'abaixo',pct:meta?r/meta:null}}
  const esperado=meta*frac,porProj=pj!=null&&frac>0&&frac<1,proj=porProj?pj:frac>0?real/frac:null,ritmo=porProj?(meta?pj/meta:null):esperado>0?real/esperado:null,pct=meta?real/meta:null;
- const status=frac===0?'futuro':frac*dias<3&&frac<1?'cedo':ritmo>=1?'ok':ritmo>=0.9?'atencao':'abaixo';
+ const status=frac===0?'futuro':frac*dias<PMt('metas.dias_cedo')&&frac<1?'cedo':ritmo>=1?'ok':ritmo>=PMt('metas.ritmo_atencao')/100?'atencao':'abaixo';
  return {ind,meta,real,esperado,proj,ritmo,pct,status,porProj}}
 const ST={ok:['No ritmo','ok'],atencao:['Atenção','warn'],abaixo:['Abaixo do ritmo','bad'],cedo:['Começo do mês','info'],futuro:['Ainda não começou',''],semdados:['Sem dados','']};
 // Mês encerrado: o resultado final, não o ritmo.
@@ -75,7 +77,7 @@ async function definir(m,canal,ind,v){if(!st.lista)await carregar();const atuais
 // com margem negativa — senão a meta de um canal no prejuízo sairia otimista).
 function sugerir(m){const ms=[1,2,3].map(n=>somaMes(m,-n)),reais=ms.map(realizado),canais=canaisDe(m),out=[];
  for(const c of canais)for(const ind of ORDEM){const vals=reais.map(r=>ind==='margem'?r[c]?.margem:r[c]?.[ind]).filter(v=>v!=null&&(ind==='margem'||v>0));if(!vals.length)continue;
-  const med=vals.reduce((a,b)=>a+b,0)/vals.length;out.push({canal:c,indicador:ind,valor:ind==='margem'?Math.round(med*2)/2:Math.round(med*1.1/100)*100})}
+  const med=vals.reduce((a,b)=>a+b,0)/vals.length;out.push({canal:c,indicador:ind,valor:ind==='margem'?Math.round(med*2)/2:Math.round(med*(1+PMt('metas.sugestao_cresc')/100)/100)*100})}
  return out}
 function canaisDe(m){const desde=somaMes(m,-3),s=new Set(['']);for(const o of db.orders||[])if(String(o.date||'')>=desde)s.add(o.platform);for(const x of st.lista||[])if(x.mes===m)s.add(x.canal);return [...s].filter(c=>c!=null)}
 
