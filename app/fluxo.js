@@ -11,7 +11,7 @@ const tituloDe=t=>{const v=t.vinculo;if(v?.tipo!=='payable')return null;const id
 const cat=t=>t.vinculo?.categoria||tituloDe(t)?.categoria||t.categoria||'';
 const grupoCat=t=>{const c=cat(t);return c?(db.cadastros||[]).find(x=>x.tipo==='cat'&&x.dados?.nome===c)?.dados?.grupo||'':''};
 const GRUPOS=[
- ['e','Repasses dos marketplaces',t=>t.valor>0&&t.vinculo?.tipo==='transferencia'&&/shopee|mercado ?pago|mercado livre|magalu|magazine luiza/.test(normalized((t.vinculo.desc||'')+' '+t.descricao)),t=>/shopee/.test(normalized((t.vinculo.desc||'')+' '+t.descricao))?'Shopee':/magalu/.test(normalized(t.vinculo.desc||''))?'Magalu':'Mercado Livre / Mercado Pago'],
+ ['e','Repasses dos marketplaces',t=>t.valor>0&&t.vinculo?.tipo==='transferencia'&&!!window.Canais.canalDoExtrato((t.vinculo.desc||'')+' '+t.descricao),t=>{const c=window.Canais.canalDoExtrato((t.vinculo.desc||'')+' '+t.descricao);return c.conta?`${c.nome} / ${c.conta}`:c.nome}],
  ['e','Resgates de aplicações',t=>t.valor>0&&t.vinculo?.tipo==='aplicacao',()=>'Resgates'],
  ['e','Aportes e outras entradas',t=>t.valor>0,t=>t.vinculo?.categoria||t.categoria||(t.vinculo?.tipo==='transferencia'?'Transferências recebidas':t.status==='pendente'?'A classificar':'Outras entradas')],
  ['s','Pessoal',t=>grupoCat(t)==='Pessoal'||/salari|pro.?labore|folha|encargo|ferias|rescis|fgts/.test(normalized(cat(t))),cat],
@@ -48,17 +48,19 @@ function realizado(){const contas=(db.bankAccounts||[]).filter(a=>a.tipo!=='apli
  <tr class="ctbgrupo"><td>Geração de caixa do mês</td>${meses.map((_,i)=>`<td class="num ${te[i]+ts[i]<0?'red':'green'}">${money(te[i]+ts[i])}</td>`).join('')}<td class="num">${money(te.reduce((a,b)=>a+b,0)+ts.reduce((a,b)=>a+b,0))}</td></tr>
  <tr class="ctbgrupo ctbfinal"><td>Saldo final</td>${fim.map(v=>`<td class="num">${money(v)}</td>`).join('')}<td></td></tr></tbody></table></div></div>`}
 // Prazo real de repasse de cada canal: mediana (data da liberação − data do pedido) nos últimos 90 dias.
-function prazos(){const lim=new Date(Date.now()-90*864e5).toLocaleDateString('sv-SE'),ped=new Map(db.orders.map(o=>[o.id,o])),d=new Map();
+// Janelas: Configurações › Parâmetros › Fluxo de caixa (90 dias de liberações, ritmo de 28 dias, atrasados de até 60).
+const PF=k=>window.Parametros.get(k);
+function prazos(){const lim=new Date(Date.now()-PF('fluxo.prazo_janela')*864e5).toLocaleDateString('sv-SE'),ped=new Map(db.orders.map(o=>[o.id,o])),d=new Map();
  for(const r of db.receipts||[]){if(!r.linkedOrder||!(r.amount>0)||(r.date||'')<lim)continue;const o=ped.get(r.linkedOrder);if(!o)continue;const n=Math.round((new Date(r.date+'T12:00:00')-new Date(o.date+'T12:00:00'))/864e5);if(n<0||n>90)continue;(d.get(o.platform)||d.set(o.platform,[]).get(o.platform)).push(n)}
  const out={};for(const [p,l] of d){l.sort((a,b)=>a-b);out[p]=l[Math.floor(l.length/2)]}return out}
 const somaDias=(d,n)=>{const x=new Date(d+'T12:00:00');x.setDate(x.getDate()+n);return x.toLocaleDateString('sv-SE')};
 function projetado(){const h=new Date().toLocaleDateString('sv-SE'),semanas=[...Array(12)].map((_,i)=>{const d=new Date(h+'T12:00:00');d.setDate(d.getDate()+i*7);const f=new Date(d);f.setDate(f.getDate()+6);return {ini:d.toLocaleDateString('sv-SE'),fim:f.toLocaleDateString('sv-SE'),en:{},sa:{}}});
  const semDe=d=>{if(d<h)return 0;const i=semanas.findIndex(s=>d>=s.ini&&d<=s.fim);return i};const put=(o,k,v)=>o[k]=(o[k]||0)+v;
  const pz=prazos();
- for(const o of db.orders){const st=status(o);if(!['A receber','Em trânsito'].includes(st))continue;const f=round(net(o)-paid(o));if(f<=0)continue;const d=o.due||(pz[o.platform]!=null?somaDias(o.date,pz[o.platform]):'');if(!d||d<new Date(Date.now()-60*864e5).toLocaleDateString('sv-SE'))continue;const i=semDe(d);if(i<0)continue;put(semanas[i].en,d<h?`${o.platform} (atrasado)`:o.platform,f)}
+ for(const o of db.orders){const st=status(o);if(!['A receber','Em trânsito'].includes(st))continue;const f=round(net(o)-paid(o));if(f<=0)continue;const d=o.due||(pz[o.platform]!=null?somaDias(o.date,pz[o.platform]):'');if(!d||d<new Date(Date.now()-PF('fluxo.atrasado_dias')*864e5).toLocaleDateString('sv-SE'))continue;const i=semDe(d);if(i<0)continue;put(semanas[i].en,d<h?`${o.platform} (atrasado)`:o.platform,f)}
  // Vendas futuras: líquido médio diário dos últimos 28 dias por canal, recebido após o prazo de repasse do canal.
- if(ui.futuras){const ini28=somaDias(h,-28),med={};for(const o of db.orders)if(o.date>=ini28&&o.date<h)med[o.platform]=(med[o.platform]||0)+net(o)/28;
-  for(let i=0;i<84;i++){const dv=somaDias(h,i);for(const [p,v] of Object.entries(med)){const dr=somaDias(dv,pz[p]??15),j=semDe(dr);if(j>0||(j===0&&dr>=h))put(semanas[j].en,`${p} (vendas futuras)`,v)}}
+ if(ui.futuras){const RT=PF('fluxo.ritmo_dias'),ini28=somaDias(h,-RT),med={};for(const o of db.orders)if(o.date>=ini28&&o.date<h)med[o.platform]=(med[o.platform]||0)+net(o)/RT;
+  for(let i=0;i<84;i++){const dv=somaDias(h,i);for(const [p,v] of Object.entries(med)){const dr=somaDias(dv,pz[p]??window.Canais.prazo(p)),j=semDe(dr);if(j>0||(j===0&&dr>=h))put(semanas[j].en,`${p} (vendas futuras)`,v)}}
   // Tributos pagos por venda (GNRE/DIFAL): média diária paga nos últimos 28 dias, mantida no horizonte.
   const trib=(db.bankTx||[]).filter(t=>t.data>=ini28&&t.data<h&&t.valor<0&&/icms|difal|gnre/i.test(t.vinculo?.categoria||t.categoria||'')).reduce((x,t)=>x-t.valor,0)/28;
   if(trib>0)for(let i=0;i<84;i++){const j=semDe(somaDias(h,i));if(j>=0)put(semanas[j].sa,'Tributos sobre vendas (estimativa)',trib)}}
@@ -77,11 +79,11 @@ function projetado(){const h=new Date().toLocaleDateString('sv-SE'),semanas=[...
 const CAT_E={rep:'Repasses de marketplaces',fut:'Vendas futuras (estimativa)',ext:'Entradas do extrato'},CAT_S={tit:'Contas a pagar',trib:'Tributos (estimativa)',ext:'Saídas do extrato'};
 // Cenário (opcional): atraso de repasse por canal, vendas futuras ±%, antecipação de recebíveis com taxa e adiamento de pagamentos.
 function eventos(h,dias,cen){cen=cen||{};const atraso=p=>Number(cen.atraso?.[p]||0),ev=[],fim=somaDias(h,dias-1),pz=prazos(),add=(d,lado,nome,v,ref,cat,atras)=>{if(d<h){d=h;atras=true}if(d>fim||!(v>0))return;ev.push({d,lado,nome,v,ref,cat,atras:!!atras})};
- for(const o of db.orders){const st=status(o);if(!['A receber','Em trânsito'].includes(st))continue;const f=round(net(o)-paid(o));if(f<=0)continue;const d=o.due||(pz[o.platform]!=null?somaDias(o.date,pz[o.platform]):'');if(!d||d<somaDias(h,-60))continue;
+ for(const o of db.orders){const st=status(o);if(!['A receber','Em trânsito'].includes(st))continue;const f=round(net(o)-paid(o));if(f<=0)continue;const d=o.due||(pz[o.platform]!=null?somaDias(o.date,pz[o.platform]):'');if(!d||d<somaDias(h,-PF('fluxo.atrasado_dias')))continue;
   if(cen.antecipar){add(h,'e',o.platform+' · antecipado',f*(1-(Number(cen.taxa)||0)/100),'Antecipação de recebíveis · taxa '+String(cen.taxa||0).replace('.',',')+'%','rep');continue}
   add(somaDias(d<h?h:d,atraso(o.platform)),'e',o.platform,f,'Pedido '+(o.external?.bling_numero||o.id)+(atraso(o.platform)?` · atrasado ${atraso(o.platform)} d no cenário`:''),'rep')}
- if(ui.futuras){const ini28=somaDias(h,-28),med={};for(const o of db.orders)if(o.date>=ini28&&o.date<h)med[o.platform]=(med[o.platform]||0)+net(o)/28;
-  for(let i=0;i<dias;i++){const dv=somaDias(h,i);for(const [p,v] of Object.entries(med)){const dr=somaDias(dv,(pz[p]??15)+atraso(p));if(dr>=h)add(dr,'e',p+' · vendas futuras',v*(1+(Number(cen.vendas)||0)/100),'estimativa pelo ritmo dos últimos 28 dias'+(cen.vendas?` · ${cen.vendas>0?'+':''}${cen.vendas}% no cenário`:''),'fut')}}
+ if(ui.futuras){const RT=PF('fluxo.ritmo_dias'),ini28=somaDias(h,-RT),med={};for(const o of db.orders)if(o.date>=ini28&&o.date<h)med[o.platform]=(med[o.platform]||0)+net(o)/RT;
+  for(let i=0;i<dias;i++){const dv=somaDias(h,i);for(const [p,v] of Object.entries(med)){const dr=somaDias(dv,(pz[p]??window.Canais.prazo(p))+atraso(p));if(dr>=h)add(dr,'e',p+' · vendas futuras',v*(1+(Number(cen.vendas)||0)/100),`estimativa pelo ritmo dos últimos ${RT} dias`+(cen.vendas?` · ${cen.vendas>0?'+':''}${cen.vendas}% no cenário`:''),'fut')}}
   const trib=(db.bankTx||[]).filter(t=>t.data>=ini28&&t.data<h&&t.valor<0&&/icms|difal|gnre/i.test(t.vinculo?.categoria||t.categoria||'')).reduce((x,t)=>x-t.valor,0)/28;
   if(trib>0)for(let i=0;i<dias;i++)add(somaDias(h,i),'s','Tributos sobre vendas',trib,'média diária paga nos últimos 28 dias','trib')}
  for(const p of db.payables||[]){if(['pago','cancelado'].includes(p.status))continue;const f=round(Math.max(0,p.valor+(p.juros||0)-(p.desconto||0)-(p.valorPago||0)));add(cen.adiar?somaDias(p.vencimento<h?h:p.vencimento,Number(cen.adiar)):p.vencimento,'s',p.fornecedor||p.descricao||'Título',f,(p.categoria||'Sem categoria')+(p.vencimento<h?' · vencido em '+new Date(p.vencimento+'T12:00:00').toLocaleDateString('pt-BR'):''),'tit')}

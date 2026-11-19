@@ -4,7 +4,7 @@
 // Vínculos sugeridos pela IA viram propostas que o usuário revisa e confirma — nada financeiro é gravado sozinho.
 // Os nomes e parâmetros das ferramentas precisam coincidir com supabase/functions/ai-assistant/prompt.ts.
 (()=>{
-const MKT=['Mercado Livre','Shopee','Magalu','TikTok Shop'];
+const MKT=()=>window.Canais?.ids?.()||['Mercado Livre','Shopee','Magalu','TikTok Shop']; // canais ativos do cadastro
 const I=()=>window.Insights;
 const byMonth=m=>db.orders.filter(o=>o.date.startsWith(m));
 const pick=(v,max=200,def=30)=>Math.max(1,Math.min(max,Number(v)||def));
@@ -13,7 +13,7 @@ const monthOf=i=>{const m=i?.mes||month;if(m!=='todos'&&!/^\d{4}-\d{2}$/.test(m)
 
 const tools={
  resumo_competencia(i){const m=monthOf(i),rows=byMonth(m),rs=db.receipts.filter(r=>r.date.startsWith(m)),un=rs.filter(r=>!r.linkedOrder),count=s=>rows.filter(o=>status(o)===s).length;
-  return {competencia:m,fechada:!!db.closures[m],total:stats(rows),por_plataforma:MKT.map(p=>({plataforma:p,...stats(rows.filter(o=>o.platform===p))})),pedidos_por_status:{Conciliado:count('Conciliado'),'Divergência':count('Divergência'),'A receber':count('A receber'),'Em trânsito':count('Em trânsito')},liberacoes:{total:rs.length,sem_vinculo:un.length,valor_sem_vinculo:round(un.reduce((a,r)=>a+r.amount,0))},competencias_com_dados:[...new Set(db.orders.map(o=>o.date.slice(0,7)))].sort()}},
+  return {competencia:m,fechada:!!db.closures[m],total:stats(rows),por_plataforma:MKT().map(p=>({plataforma:p,...stats(rows.filter(o=>o.platform===p))})),pedidos_por_status:{Conciliado:count('Conciliado'),'Divergência':count('Divergência'),'A receber':count('A receber'),'Em trânsito':count('Em trânsito')},liberacoes:{total:rs.length,sem_vinculo:un.length,valor_sem_vinculo:round(un.reduce((a,r)=>a+r.amount,0))},competencias_com_dados:[...new Set(db.orders.map(o=>o.date.slice(0,7)))].sort()}},
  listar_pedidos(i){const m=monthOf(i);let rows=m==='todos'?db.orders:byMonth(m);if(i.plataforma)rows=rows.filter(o=>o.platform===i.plataforma);if(i.status)rows=rows.filter(o=>i.status==='Pendentes'?status(o)!=='Conciliado':status(o)===i.status);if(i.busca){const q=String(i.busca).toLowerCase();rows=rows.filter(o=>`${o.id} ${o.nf} ${o.customer?.name||''}`.toLowerCase().includes(q))}
   return {encontrados:rows.length,pedidos:rows.slice(0,pick(i.limite)).map(orderOut)}},
  listar_liberacoes(i){const m=monthOf(i);let rs=m==='todos'?db.receipts:db.receipts.filter(r=>r.date.startsWith(m));if(i.plataforma)rs=rs.filter(r=>r.platform===i.plataforma);if(i.sem_vinculo)rs=rs.filter(r=>!r.linkedOrder);

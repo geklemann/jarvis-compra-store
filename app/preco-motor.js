@@ -71,8 +71,9 @@ function precoPara(meta,campo,c){const T=trechos(c);let resp=null;
 /** Os três preços de referência. metas: {minimo, alvo}. */
 function precos(c,metas=METAS_PADRAO){const alvo=n(metas.alvo??METAS_PADRAO.alvo),minimo=n(metas.minimo??0),p={piso:precoPara(0,'mc',c),minimo:precoPara(minimo,'liq',c),alvo:precoPara(alvo,'liq',c),metaAlvo:alvo,metaMinimo:minimo};
  p.markupAlvo=p.alvo&&n(c.custo)?p.alvo/n(c.custo):null;return p}
-/** Situação de uma margem líquida frente às metas: 'prejuizo' | 'abaixo' | 'alvo'. */
-const situacao=(liqP,metas=METAS_PADRAO)=>liqP<n(metas.minimo??0)-1e-9?'prejuizo':liqP<n(metas.alvo??10)-0.05?'abaixo':'alvo';
+/** Situação de uma margem líquida frente às metas: 'prejuizo' | 'abaixo' | 'alvo'. metas.tol: quanto abaixo do Alvo ainda
+ * conta como "no alvo" (0,05 p.p. no padrão: o arredondamento; Configurações › Parâmetros). */
+const situacao=(liqP,metas=METAS_PADRAO)=>liqP<n(metas.minimo??0)-1e-9?'prejuizo':liqP<n(metas.alvo??10)-(metas.tol!=null?n(metas.tol):0.05)?'abaixo':'alvo';
 
 /** Passo a passo da conta (para o painel "A conta" e os balões). */
 function passos(P,c){const L=conta(P,c),pc=v=>(Math.round(v*10)/10).toLocaleString('pt-BR')+'%';

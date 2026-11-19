@@ -6,21 +6,22 @@
 // que calcula ICMS, DIFAL, FCP, PIS e COFINS exatamente como o emissor do Jarvis.
 (()=>{
 Object.assign(paths,{sliders:'M4 6h10 M18 6h2 M4 12h4 M12 12h8 M4 18h12 M20 18h0 M14 4v4 M8 10v4 M16 16v4'});
-const UFS=['AC','AL','AM','AP','BA','CE','DF','ES','GO','MA','MG','MS','MT','PA','PB','PE','PI','PR','RJ','RN','RO','RR','RS','SC','SE','SP','TO'];
+// Tabelas do ICMS por UF, FCP, interestadual e a base do PIS/COFINS: as comuns de web/parametros-base.js (Parametros.fiscal),
+// as mesmas da Contabilidade automática.
+const FX=window.Parametros.fiscal,UFS=FX.UFS;
 const NOME_UF={AC:'Acre',AL:'Alagoas',AM:'Amazonas',AP:'Amapá',BA:'Bahia',CE:'Ceará',DF:'Distrito Federal',ES:'Espírito Santo',GO:'Goiás',MA:'Maranhão',MG:'Minas Gerais',MS:'Mato Grosso do Sul',MT:'Mato Grosso',PA:'Pará',PB:'Paraíba',PE:'Pernambuco',PI:'Piauí',PR:'Paraná',RJ:'Rio de Janeiro',RN:'Rio Grande do Norte',RO:'Rondônia',RR:'Roraima',RS:'Rio Grande do Sul',SC:'Santa Catarina',SE:'Sergipe',SP:'São Paulo',TO:'Tocantins'};
-const ALIQ_INTERNA={AC:19,AL:19,AM:20,AP:18,BA:20.5,CE:20,DF:20,ES:17,GO:19,MA:23,MG:18,MS:17,MT:17,PA:19,PB:20,PE:20.5,PI:22.5,PR:19.5,RJ:20,RN:20,RO:19.5,RR:20,RS:17,SC:17,SE:19,SP:18,TO:20};
-const INTER_7=new Set(['AC','AL','AM','AP','BA','CE','DF','ES','GO','MA','MS','MT','PA','PB','PE','PI','RN','RO','RR','SE','TO']);
-const IMPORTADO=new Set([1,2,3,8]);
+const ALIQ_INTERNA=FX.ALIQ_INTERNA,IMPORTADO=FX.IMPORTADO;
 const ORIGENS={0:'0 · Nacional',1:'1 · Importação direta',2:'2 · Importada adquirida no mercado interno',3:'3 · Nacional, conteúdo importado > 40%',4:'4 · Nacional, processos produtivos básicos',5:'5 · Nacional, conteúdo importado ≤ 40%',6:'6 · Importação direta sem similar (CAMEX)',7:'7 · Importada no mercado interno sem similar',8:'8 · Nacional, conteúdo importado > 70%'};
 /* Sem dados de nenhuma empresa: CNPJ, razão, cidade/UF, regime e CRT começam vazios para a empresa preencher. */
-const PADRAO={ambiente:'homologacao',cnpj:'',razao:'',uf:'',municipio:'',crt:'',regime:'',serie:'2',natureza:'Venda de Mercadoria - NAO CONTRIBUINTE',natureza_contribuinte:'Venda de Mercadoria - CONTRIBUINTE',cfop_interno:'5102',cfop_interestadual:'6108',cfop_interestadual_contribuinte:'6102',cst_icms:'00',cst_pis:'01',aliq_pis:0.65,cst_cofins:'01',aliq_cofins:3,modalidade_frete:0,difal:true,origem_padrao:5,presenca:9,forma_pagamento:'20',ibpt_federal:17.1,ibpt_estadual:17,texto_difal:true,texto_adicional:'',pis_exclui_icms:true,ibs_cst:'000',ibs_cclass:'000001',aliq_cbs:0.9,aliq_ibs_uf:0.1,aliq_ibs_mun:0};
+const PADRAO={ambiente:'homologacao',cnpj:'',razao:'',uf:'',municipio:'',crt:'',regime:'',serie:'2',natureza:'Venda de Mercadoria - NAO CONTRIBUINTE',natureza_contribuinte:'Venda de Mercadoria - CONTRIBUINTE',cfop_interno:'5102',cfop_interestadual:'6108',cfop_interestadual_contribuinte:'6102',cst_icms:'00',cst_pis:'01',aliq_pis:FX.PADRAO.aliq_pis,cst_cofins:'01',aliq_cofins:FX.PADRAO.aliq_cofins,modalidade_frete:0,difal:FX.PADRAO.difal,origem_padrao:FX.PADRAO.origem_padrao,presenca:9,forma_pagamento:'20',ibpt_federal:17.1,ibpt_estadual:17,texto_difal:true,texto_adicional:'',pis_exclui_icms:true,ibs_cst:'000',ibs_cclass:'000001',aliq_cbs:0.9,aliq_ibs_uf:0.1,aliq_ibs_mun:0};
 const CRT_TXT={1:'Simples Nacional',2:'Simples, excesso de sublimite',3:'regime normal: Lucro Presumido ou Real'};
-const PLAT_CNPJ={'Mercado Livre':'03007331000141','Shopee':'35635824000112','Magalu':'47960950000121'};
+// Intermediadores (NT 2020.006): os canais com CNPJ no cadastro de canais (Cadastros › Canais de venda).
+const PLAT_CNPJ=new Proxy({},{ownKeys:()=>window.Canais.intermediadores().map(x=>x[0]),getOwnPropertyDescriptor:(_,k)=>{const x=window.Canais.intermediadores().find(y=>y[0]===k);return x?{value:x[1],enumerable:true,configurable:true}:undefined},get:(_,k)=>window.Canais.intermediadores().find(y=>y[0]===k)?.[1]});
 const SECOES=[['empresa','Empresa e regime'],['icms','ICMS, DIFAL e FCP por estado'],['inscricoes','Inscrições estaduais (substituto tributário)'],['federais','PIS, COFINS, IPI e IBS/CBS'],['nota','Dados da nota fiscal'],['intermed','Intermediadores (marketplaces)'],['produtos','Produtos: NCM e origem'],['contabil','Contábil']];
 const ui={sec:'empresa',regras:null,prods:null,carregando:false,sim:{uf:'SP',valor:300,origem:5,frete:0,doc:'cpf'}};
 window.Reiniciar?.registrar(ui,['sec','sim']); // estado de tela: volta ao original ao clicar no menu
 /* ICMS interno: o salvo; senão a alíquota interna da UF do emitente; vazio se a UF ainda não foi informada. */
-const cfg=()=>{const c={...PADRAO,...(db.gerencial?.fiscal||{})};c.uf=String(c.uf||'').trim().toUpperCase();if(c.aliq_icms_interna==null||c.aliq_icms_interna==='')c.aliq_icms_interna=ALIQ_INTERNA[c.uf]??'';return c};
+const cfg=()=>{const c={...PADRAO,...(db.gerencial?.fiscal||{})};c.uf=String(c.uf||'').trim().toUpperCase();if(c.aliq_icms_interna==null||c.aliq_icms_interna==='')c.aliq_icms_interna=ALIQ_INTERNA[c.uf]??'';for(const k of ['aliq_pis','aliq_cofins'])if(c[k]==null||c[k]==='')c[k]=PADRAO[k];return c};
 const ufTxt=c=>c.uf||'seu estado';
 const salvarCfg=(novo,msg)=>{db.gerencial={...(db.gerencial||{}),fiscal:{...(db.gerencial?.fiscal||{}),...novo}};save();if(msg)toast(msg)};
 const pct=v=>v==null||v===''?'—':String(v).replace('.',',')+'%';
@@ -30,11 +31,11 @@ async function carregar(){if(ui.carregando||!window.Cloud?.ws)return;ui.carregan
 
 // ─────────── Regras por UF: salvas > ERP de origem > tabela ───────────
 function regraUF(uf){const c=cfg(),s=c.por_uf?.[uf]||{},b=ui.regras?.por_uf?.[uf]||{};
- const interna=s.interna??(b.pICMSUFDest!=null?Number(b.pICMSUFDest):ALIQ_INTERNA[uf]),fcp=s.fcp??(b.pFCPUFDest!=null?Number(b.pFCPUFDest):({AL:1,RJ:2}[uf]||0));
- return {interna,fcp,difal:s.difal??c.difal,inter:uf===c.uf?c.aliq_icms_interna:(INTER_7.has(uf)?7:12),bling:b,salvo:s}}
+ const interna=FX.internaDestino(uf,c,b.pICMSUFDest),fcp=FX.fcpDestino(uf,c,b.pFCPUFDest);
+ return {interna,fcp,difal:s.difal??c.difal,inter:uf===c.uf?FX.icmsInterno(c):FX.interestadual(uf,null,c),bling:b,salvo:s}}
 function calcular({uf,valor,origem,frete,doc}){const c=cfg(),interno=uf===c.uf,r=regraUF(uf),base=Number(valor)+Number(frete||0);
- const inter=interno?c.aliq_icms_interna:(IMPORTADO.has(Number(origem))?4:r.inter),icms=base*inter/100,difal=!interno&&r.difal&&doc!=='cnpj'?base*Math.max(0,r.interna-inter)/100:0,fcp=!interno&&r.difal&&doc!=='cnpj'?base*r.fcp/100:0;
- const bp=c.pis_exclui_icms?base-icms-difal-fcp:base,pis=bp*c.aliq_pis/100,cofins=bp*c.aliq_cofins/100,bi=bp-pis-cofins,cbs=bi*c.aliq_cbs/100,ibs=bi*(c.aliq_ibs_uf+c.aliq_ibs_mun)/100;
+ const inter=interno?FX.icmsInterno(c):FX.interestadual(uf,origem,c),icms=base*inter/100,difal=!interno&&r.difal&&doc!=='cnpj'?base*Math.max(0,r.interna-inter)/100:0,fcp=!interno&&r.difal&&doc!=='cnpj'?base*r.fcp/100:0;
+ const bp=FX.basePisCofins({base,icms,difal,fcp},c),pis=bp*FX.aliqPis(c)/100,cofins=bp*FX.aliqCofins(c)/100,bi=bp-pis-cofins,cbs=bi*c.aliq_cbs/100,ibs=bi*(c.aliq_ibs_uf+c.aliq_ibs_mun)/100;
  return {bp,bi,cbs,ibs,cfop:interno?c.cfop_interno:(doc==='cnpj'?c.cfop_interestadual_contribuinte:c.cfop_interestadual),base,inter,icms,difal,fcp,pis,cofins,total:icms+difal+fcp+pis+cofins+cbs+ibs,interna:r.interna,fcpP:r.fcp}}
 
 // ─────────── Sugestões inteligentes ───────────
@@ -90,7 +91,7 @@ function secProdutos(){const l=ui.prods||[];if(!ui.prods)return '<p class="capti
 function secContabil(){const c=db.gerencial?.contabil||{},plano=window.Contab?.plano?.()||[],mapa=window.Contab?.mapaCategorias?.()||{},sn=/simples/i.test(cfg().regime||'');
  return `<div class="grid three"><div class="field"><label>Tributos sobre vendas</label><select data-pc="provisao"><option value="1" ${c.provisao!==false?'selected':''}>${sn?'Competência (DAS do Simples e DIFAL por UF)':'Competência (ICMS, DIFAL por UF, PIS/COFINS, IRPJ/CSLL)'}</option><option value="0" ${c.provisao===false?'selected':''}>Caixa (quando pagar a guia)</option></select></div>
  <div class="field"><label>Alíquota efetiva fixa (%)</label><input data-pc="aliq_efetiva" value="${esc(c.aliq_efetiva??'')}" placeholder="${sn?'vazio = DAS (Anexo I) + DIFAL calibrados pelo balancete':'vazio = regras da NF-e calibradas pelo balancete'}"></div><div class="field"><label>De-para com o plano do escritório</label><button class="small" data-nav="fechcontab">Abrir Fechamento contábil</button></div>
- <div class="field"><label>Custo das mercadorias vendidas</label><select data-pc="custo_cmv"><option value="medio_nf" ${(c.custo_cmv||'medio_nf')==='medio_nf'?'selected':''}>Custo médio das notas de entrada</option><option value="cadastro" ${c.custo_cmv==='cadastro'?'selected':''}>Custo do cadastro de produtos</option></select></div>${sn?campo('aliq_simples','Alíquota efetiva do DAS (%)',`placeholder="vazio = Anexo I pela receita de 12 meses${(t=>t?.aliqDas?' (hoje '+(t.aliqDas*100).toFixed(2).replace('.',',')+'%)':'')(window.Contab?.tributos?.(month))}"`):`${campo('presuncao_irpj','Presunção IRPJ (%) · comércio 8','placeholder="8"')}${campo('presuncao_csll','Presunção CSLL (%) · comércio 12','placeholder="12"')}${campo('credito_icms_compras','Crédito de ICMS nas compras (%)',`placeholder="vazio = aprende do balancete${window.Contab?.creditoCompras?.()?' ('+(Contab.creditoCompras().r*100).toFixed(2).replace('.',',')+'%)':''}"`)}`}</div>
+ <div class="field"><label>Custo das mercadorias vendidas</label><select data-pc="custo_cmv"><option value="medio_nf" ${(c.custo_cmv||'medio_nf')==='medio_nf'?'selected':''}>Custo médio das notas de entrada</option><option value="cadastro" ${c.custo_cmv==='cadastro'?'selected':''}>Custo do cadastro de produtos</option></select></div>${sn?campo('aliq_simples','Alíquota efetiva do DAS (%)',`placeholder="vazio = Anexo ${window.Parametros.get('fiscal.simples_anexo')} pela receita de 12 meses${(t=>t?.aliqDas?' (hoje '+(t.aliqDas*100).toFixed(2).replace('.',',')+'%)':'')(window.Contab?.tributos?.(month))}"`):`${campo('presuncao_irpj','Presunção IRPJ (%) · comércio 8','placeholder="8"')}${campo('presuncao_csll','Presunção CSLL (%) · comércio 12','placeholder="12"')}${campo('credito_icms_compras','Crédito de ICMS nas compras (%)',`placeholder="vazio = aprende do balancete${window.Contab?.creditoCompras?.()?' ('+(Contab.creditoCompras().r*100).toFixed(2).replace('.',',')+'%)':''}"`)}`}</div>
  <div class="tablewrap" style="max-height:420px;margin-top:10px"><table><thead><tr><th>Categoria do financeiro</th><th>Conta contábil (Jarvis)</th></tr></thead><tbody>${Object.keys(mapa).sort().map(cat=>`<tr><td>${esc(cat)}</td><td><select data-pc-mapa="${esc(cat)}">${plano.filter(p=>p.c.split('.').length>=3).map(p=>`<option value="${p.c}" ${(c.mapa?.[cat]||mapa[cat])===p.c?'selected':''}>${p.c} · ${esc(p.n)}</option>`).join('')}</select></td></tr>`).join('')}</tbody></table></div>
  <p class="caption">O mapeamento vale para a contabilidade automática (diário, balancete, DRE). O diário exporta em CSV para o escritório em Resultado › Contabilidade › Contabilidade automática.</p>`}
 
@@ -110,8 +111,9 @@ function view(){if(!window.Cloud?.ws)return '<div class="empty">Entre no portal.
  ${['icms','federais','nota','empresa'].includes(ui.sec)?simulador():''}
  <section class="card"><div class="cardhead"><h2>${icon('spark')} Sugestões do Jarvis</h2><span class="caption">baseadas nas notas já emitidas, no cadastro e na legislação</span></div>${sug.map(s=>`<div class="tarefa"><span class="avico ${s.tom}">${icon(s.tom==='ok'?'check':s.tom==='bad'?'alert':'spark')}</span><div><strong>${s.t}</strong><small>${s.s}</small></div>${s.acao?`<button class="small" data-pf-sec="${s.acao}">Ver</button>`:''}</div>`).join('')}</section></div></div>`}
 
-function coletar(){const novo={};$$('[data-pf]').forEach(i=>{const k=i.dataset.pf,v=i.value.trim();novo[k]=k==='crt'&&v===''?'':/^(aliq|ibpt|modalidade|presenca|crt)/.test(k)?Number(v.replace(',','.')):v});$$('[data-pf-bool]').forEach(i=>novo[i.dataset.pfBool]=i.checked);
- if($$('[data-uf]').length){const pu={...(cfg().por_uf||{})};$$('[data-uf]').forEach(i=>{const uf=i.dataset.uf,k=i.dataset.ufCampo;pu[uf]={...(pu[uf]||{}),[k]:i.type==='checkbox'?i.checked:Number(String(i.value).replace(',','.'))}});novo.por_uf=pu}
+// Campo numérico vazio fica sem valor (vale o padrão), nunca 0: o 0 digitado é 0 de verdade.
+function coletar(){const novo={};$$('[data-pf]').forEach(i=>{const k=i.dataset.pf,v=i.value.trim();novo[k]=k==='crt'&&v===''?'':/^(aliq|ibpt|modalidade|presenca|crt)/.test(k)?(v===''?null:Number(v.replace(',','.'))):v});$$('[data-pf-bool]').forEach(i=>novo[i.dataset.pfBool]=i.checked);
+ if($$('[data-uf]').length){const pu={...(cfg().por_uf||{})};$$('[data-uf]').forEach(i=>{const uf=i.dataset.uf,k=i.dataset.ufCampo;pu[uf]={...(pu[uf]||{}),[k]:i.type==='checkbox'?i.checked:String(i.value).trim()===''?null:Number(String(i.value).replace(',','.'))}});novo.por_uf=pu}
  if($$('[data-int]').length){const im={...(cfg().intermediadores||{})};$$('[data-int]').forEach(i=>{const p=i.dataset.int;im[p]={...(im[p]||{}),[i.dataset.intCampo]:i.value.trim()}});novo.intermediadores=im}
  if($$('[data-pc]').length||$$('[data-pc-mapa]').length){const cc={...(db.gerencial?.contabil||{})};$$('[data-pc]').forEach(i=>{cc[i.dataset.pc]=i.dataset.pc==='custo_cmv'?i.value:i.dataset.pc==='provisao'?i.value==='1':(i.value.trim()===''?null:Number(i.value.replace(',','.')))});const mp={...(cc.mapa||{})};$$('[data-pc-mapa]').forEach(i=>mp[i.dataset.pcMapa]=i.value);cc.mapa=mp;db.gerencial={...(db.gerencial||{}),contabil:cc}}
  return novo}
@@ -126,5 +128,5 @@ document.addEventListener('click',async e=>{const b=e.target.closest('[data-pf-s
  if(d.pfReceita){b.disabled=true;try{const r=await fn('cnpj',{cnpj:cfg().cnpj});salvarCfg({razao:r.razao,ie:String(r.ie||'').replace(/\D/g,''),municipio:r.cidade,uf:r.uf,cnae:r.atividade},'Dados da Receita preenchidos.')}catch(x){toast(x.message)}render();return}});
 document.addEventListener('change',e=>{const s=e.target.closest('[data-sim]');if(s){ui.sim[s.dataset.sim]=s.dataset.sim==='uf'||s.dataset.sim==='doc'?s.value:Number(String(s.value).replace(',','.'))||0;render()}});
 addPage('parametros','sliders','Regras fiscais',view,'Regras fiscais e contábeis sugeridas, simulador de nota e aprovação da contabilidade.','',()=>{});
-window.Parametros={cfg};
+Object.assign(window.Parametros,{cfg});
 })();

@@ -53,14 +53,14 @@ function fasesView(){if(!nicho())return `<div class="notice"><strong>Recurso par
 
 // ─────────────── Réguas de relacionamento ───────────────
 const REGUAS=[
- {id:'posentrega',t:'Chegou tudo certo?',quando:'3 dias depois da entrega',canal:'Mercado Livre (chat do pedido)',get texto(){return 'Olá! O seu {produto} chegou direitinho? Se precisar de qualquer ajuda com o uso, é só responder aqui. '+(window.Marca?.assinatura?.()||'')},dias:3,filtro:o=>o.platform==='Mercado Livre'},
- {id:'dicas',t:'Dicas de uso e opinião',quando:'10 dias depois da compra',canal:'Mercado Livre (chat do pedido)',texto:'Olá! Esperamos que você esteja gostando do {produto}. Queremos muito saber sua opinião sobre o produto — conte pra gente aqui mesmo o que achou. Sua resposta ajuda a gente a melhorar!',dias:10,filtro:o=>o.platform==='Mercado Livre'},
+ {id:'posentrega',t:'Chegou tudo certo?',get quando(){return `${this.dias} dias depois da entrega`},canal:'Mercado Livre (chat do pedido)',get texto(){return 'Olá! O seu {produto} chegou direitinho? Se precisar de qualquer ajuda com o uso, é só responder aqui. '+(window.Marca?.assinatura?.()||'')},get dias(){return window.Parametros.get('crm.regua_posentrega')},filtro:o=>o.platform==='Mercado Livre'},
+ {id:'dicas',t:'Dicas de uso e opinião',get quando(){return `${this.dias} dias depois da compra`},canal:'Mercado Livre (chat do pedido)',texto:'Olá! Esperamos que você esteja gostando do {produto}. Queremos muito saber sua opinião sobre o produto — conte pra gente aqui mesmo o que achou. Sua resposta ajuda a gente a melhorar!',get dias(){return window.Parametros.get('crm.regua_dicas')},filtro:o=>o.platform==='Mercado Livre'},
  {id:'fase',t:'Próxima fase da criança',quando:'quando a criança entra na próxima fase',canal:'WhatsApp/e-mail (com consentimento) ou cupom de seguidor Shopee',texto:'Oi! A criança já deve estar com {idade} — idade perfeita para o {sugestao}. Separamos uma condição especial para você.',dias:null,nicho:true},
- {id:'reativacao',t:'Reativação',quando:'180 dias sem comprar',canal:'Cupom de loja/seguidor (Shopee) e campanhas (Mercado Livre)',texto:'Faz tempo que você não passa por aqui! Temos novidades separadas para você.',dias:180}];
+ {id:'reativacao',t:'Reativação',get quando(){return `${this.dias} dias sem comprar`},canal:'Cupom de loja/seguidor (Shopee) e campanhas (Mercado Livre)',texto:'Faz tempo que você não passa por aqui! Temos novidades separadas para você.',get dias(){return window.Parametros.get('crm.regua_reativacao')}}];
 function reguasCfg(){return db.gerencial?.reguas||{}}
 function publico(r){const h=hoje(),cl=window.CRM?.clientes?.()||[];
  if(r.id==='fase')return cl.filter(c=>{const p=perfil(c);return p?.prox&&p.janela<=h&&p.janela>=addMeses(h,-1)}).length;
- if(r.id==='reativacao')return cl.filter(c=>c.recencia>=180&&c.recencia<210).length;
+ if(r.id==='reativacao')return cl.filter(c=>c.recencia>=r.dias&&c.recencia<r.dias+30).length;
  const alvo=addMeses(h,-(r.dias/30.44));return db.orders.filter(o=>r.filtro(o)&&o.date===alvo).length}
 const env={lista:null,info:null,carregando:false};
 async function carregarEnvios(){if(env.carregando||!window.Cloud?.ws)return;env.carregando=true;try{const [a,b]=await Promise.all([Cloud.client.from('regua_envios').select('*').eq('workspace_id',Cloud.ws).order('enviado_em',{ascending:false}).limit(200),Cloud.client.from('integrations').select('settings').eq('workspace_id',Cloud.ws).eq('provider','mercadolivre').maybeSingle()]);env.lista=a.data||[];env.info=b.data?.settings?.reguas||null}catch{env.lista=[]}finally{env.carregando=false}if(page==='crmreguas')render()}

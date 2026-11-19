@@ -19,7 +19,7 @@ function dreDoMes(m){const G=window.Gestao;if(!G?.dreMes)return null;const d=G.d
 // O custo do produto de Preços e margem (o mesmo da Formação de preço e da Margem real), já com a embalagem.
 const custoCache=new Map();function custos(){custoCache.clear();return {get:k=>{if(!custoCache.has(k)){const v=window.Preco?.custoDe?.(k)||0;custoCache.set(k,v>0?{c:v,e:0}:null)}return custoCache.get(k)}}}
 function calcular(){const m=ui.mes,C=custos(),linhas=new Map(),dre=dreDoMes(m);let receitaTot=0,unTot=0,semCusto=0;
- for(const o of db.orders){if(!o.date.startsWith(m)||(ui.canal&&o.platform!==ui.canal))continue;{const itv=(o.items||[]).reduce((s,i)=>s+(Number(i.qty)||0)*(Number(i.price)||0),0);if(!(o.gross>0)||o.fee>=o.gross*0.95||(itv>0&&o.gross<itv*0.5))continue}if((o.feeSource||o.fee_source||'')!==o.platform)continue;/* só tarifa real do marketplace */
+ for(const o of db.orders){if(!o.date.startsWith(m)||(ui.canal&&o.platform!==ui.canal))continue;if(window.Parametros.cancelado(o))continue; /* cancelado/reembolsado: a regra de todas as telas */if((o.feeSource||o.fee_source||'')!==o.platform)continue;/* só tarifa real do marketplace */
   const its=o.items||[],tot=its.reduce((a,i)=>a+(Number(i.qty)||0)*(Number(i.price)||0),0)||1,frete=0; // taxa da Shopee (venda − repasse) já inclui o frete do vendedor
   for(const i of its){const q=Number(i.qty)||0,share=(q*(Number(i.price)||0))/tot,sku=String(i.sku||i.title||'?').trim(),k=ui.grupo==='canal'?o.platform:sku,c=C.get(sku);
    const x=linhas.get(k)||{k,nome:ui.grupo==='canal'?o.platform:(i.title||sku),sku:ui.grupo==='canal'?'':sku,un:0,rb:0,cmv:0,tar:0,fre:0,semCusto:false,pedidos:new Set()};
