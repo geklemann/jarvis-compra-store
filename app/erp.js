@@ -40,16 +40,16 @@ const C=tipo=>(db.cadastros||(db.cadastros=[])).filter(c=>c.tipo===tipo);
 const MODS=[
  {id:'ini',ic:'home',t:'Início',grupos:[['Início',['resumo','pending']]]},
  {id:'atd',ic:'headset',t:'Atendimento',grupos:[['Atendimento',['atendimento']],['Pós-venda',['devolucoes']],['Satisfação do cliente',['cx']]]},
- {id:'ven',ic:'link',t:'Vendas',grupos:[['Acompanhar',['dashboard','metas']],['Vender',['vendadireta','b2b']],['Produtos e regiões',['produtos','estados','clientes']],['Lucro e preço',['margem','raiox','anuncios','concorrencia']],['Faturamento e repasses',['faturamento','reconcile','closing']]]},
+ {id:'ven',ic:'link',t:'Vendas',grupos:[['Acompanhar',['dashboard','metas']],['Vender',['vendadireta','b2b']],['Produtos e regiões',['produtos','estados','clientes']],['Faturamento e repasses',['faturamento','reconcile','closing']]]},
  {id:'est',ic:'box',t:'Estoque',grupos:[['Estoque',['estoque','estcompras','estparado','pedcompra','sazonal','travaestoque']],['Operação',['chegada','movestoque','inventario','separacao','conferencia']]]},
  {id:'imp',ic:'ship',t:'Importações',grupos:[['Acompanhar',['importacoes']],['Cadastro',['impitens']],['Financeiro',['imppag']]]},
  {id:'fin',ic:'wallet',t:'Financeiro',grupos:[['A pagar',['pagar','compras']],['A receber',['receber']],['Bancos',['tesouraria','concbanco','sispag']],['Caixa',['fluxo']]]},
  {id:'orc',ic:'target',t:'Orçamento',grupos:[['Planejar',['orcvisao','orcpremissas','orcreceitas','orcdespesas','orcpessoal','orcinvest']],['Resultado',['orcdre','orccaixa','orcamento']]]},
  {id:'fis',ic:'receipt',t:'Fiscal',grupos:[['Notas fiscais',['nfemitir','nfnotas','nfdevolucao','nfrecebidas']],['Tributos',['difal']],['Regras',['parametros','nfconfig']]]},
  {id:'crm',ic:'heart',t:'CRM',grupos:[['Clientes',['crm','crmclientes']],['Vender mais',['crmacoes','crmfases','crmreguas']],['Produtos e regiões',['crmprodutos','crmgeo']]]},
- {id:'cad',ic:'folder',t:'Cadastros',grupos:[['Parceiros',['fornecedores']],['Financeiro',['cadcontas','categorias','centros']],['Produtos',['catalogo','cadprodutos']],['Empresa',['dadosempresa','privacidade']]]},
+ {id:'cad',ic:'folder',t:'Cadastros',grupos:[['Parceiros',['fornecedores']],['Financeiro',['cadcontas','categorias','centros']],['Produtos',['catalogo']],['Empresa',['dadosempresa','privacidade']]]},
  {id:'res',ic:'chart',t:'Resultado',grupos:[['Análises',['rentabilidade']],['Contabilidade',['contabauto','fechcontab','contabil','planocontas']]]},
- {id:'pre',ic:'tag',t:'Preços',grupos:[['Formação de preço',['formacao','promocao']]]},
+ {id:'pre',ic:'tag',t:'Preços e margem',grupos:[['Montar o preço',['custoproduto','regrasvenda','formacao','margem']],['Agir',['promocao','concorrencia','anuncios']]]},
  {id:'pes',ic:'wallet',t:'Folha',grupos:[['Painel',['folhapainel']],['Cadastros',['pscolab','psprolabore']],['Folha de pagamento',['folha','psferias','psresc','psesocial']],['Ponto',['ponto']]]},
 {id:'rel',ic:'print',t:'Relatórios',grupos:[['Relatórios',['relfin','reports','diagnostico','alertasrel','cancelados','relshopee','saldosreceber']]]}];
 // Tela principal de cada módulo: abre ao clicar no nome do módulo no menu e fica no topo da lista dele.
@@ -85,7 +85,7 @@ let paginaAnterior=null;
 // Menus sempre em ordem alfabética (Início fica no topo): módulos, grupos e telas de cada grupo, pelo nome que aparece.
 let ordemN=-1;function ordenarMenus(){if(ordemN===navItems.length)return;ordemN=navItems.length;const az=(x,y)=>String(x).localeCompare(String(y),'pt-BR',{sensitivity:'base'});
  const ini=MODS.filter(m=>m.id==='ini'),resto=MODS.filter(m=>m.id!=='ini').sort((x,y)=>az(x.t,y.t));MODS.splice(0,MODS.length,...ini,...resto);
- for(const m of MODS)if(m.id!=='pes')for(const g of m.grupos)g[1].sort((x,y)=>az(nomePag(x),nomePag(y)))} // Folha: na ordem do processo (mensal, férias, rescisão, eSocial)
+ for(const m of MODS)if(m.id!=='pes'&&m.id!=='pre')for(const g of m.grupos)g[1].sort((x,y)=>az(nomePag(x),nomePag(y)))} // Folha e Preços e margem: na ordem do processo (Folha: mensal, férias, rescisão, eSocial; preço: custo → regras → formação → margem real)
 // Telas de Vendas que o CRM tem em versão completa: com o CRM liberado, o menu mostra só a do CRM (e o link leva para ela).
 const DUP_CRM={produtos:'crmprodutos',estados:'crmgeo',clientes:'crmclientes'};
 const crmCobre=id=>!!DUP_CRM[id]&&window.Perfis?.moduloVisivel?.('crm')!==false&&navItems.some(n=>n[0]===DUP_CRM[id])&&window.Perfis?.paginaVisivel?.(DUP_CRM[id])!==false;
@@ -259,11 +259,11 @@ const CADS={
    salvar:(id,d,ativo=true)=>{db.bankAccounts=db.bankAccounts||[];let a=db.bankAccounts.find(x=>x.id===id);if(!a){a={id:uid()};db.bankAccounts.push(a)}Object.assign(a,d,{saldoInicial:round(Number(d.saldoInicial)||0),dataSaldoInicial:d.dataSaldoInicial||null,ativo});return a.id},excluir:id=>{if((db.bankTx||[]).some(t=>t.contaId===id))return toast('A conta tem movimentos importados: inative em vez de excluir.'),false;db.bankAccounts=db.bankAccounts.filter(a=>a.id!==id)}},
   secoes:[['Conta',[['nome','Nome',{req:1,span:2}],['tipo','Tipo',{op:[['corrente','Conta corrente'],['aplicacao','Aplicação'],['carteira','Carteira de marketplace'],['caixa','Caixa']]}],['banco','Banco (código)'],['agencia','Agência'],['conta','Conta']]],['Saldo inicial',[['saldoInicial','Saldo inicial (R$)',{t:'money'}],['dataSaldoInicial','No fim do dia',{t:'date'}]]]],
   colunas:[['Conta',d=>`<strong>${esc(d.nome)}</strong>`],['Tipo',d=>esc({corrente:'Conta corrente',aplicacao:'Aplicação',carteira:'Carteira de marketplace',caixa:'Caixa'}[d.tipo]||d.tipo)],['Banco / agência / conta',d=>esc([d.banco,d.agencia,d.conta].filter(Boolean).join(' · ')||'—')],['Saldo atual',(d)=>{const s=window.Tesouraria?.saldos().contas.find(x=>x.id===d.id);return `<span class="num">${money(s?.saldo||0)}</span>`}]]},
- cadprodutos:{ic:'box',titulo:'Custos e embalagens',um:'produto',sub:'SKU, custo e embalagem — a base do lucro por pedido e da formação de preço.',nome:d=>d.nome||d.id,
+ cadprodutos:{ic:'box',titulo:'Custos e embalagens',um:'produto',sub:'Cadastro do SKU: descrição, categoria, peso, custo à mão e embalagem. O custo que vale nas margens é o de Preços e margem › Custo do produto (a última nota de entrada).',nome:d=>d.nome||d.id,
   store:{lista:()=>(db.products||[]).map(p=>({id:p.id,dados:p,ativo:true})),get:id=>{const p=(db.products||[]).find(x=>x.id===id);return p&&{id,dados:p,ativo:true}},
    salvar:(id,d)=>{db.products=db.products||[];const sku=String(d.id||id||'').trim();if(!sku)return toast('Informe o SKU.'),null;let p=db.products.find(x=>x.id===(id||sku));if(!p){if(db.products.some(x=>x.id===sku))return toast('Já existe um produto com este SKU.'),null;p={id:sku,precos:{},extra:{}};db.products.push(p)}Object.assign(p,{nome:d.nome||'',categoria:d.categoria||'',custo:round(Number(d.custo)||0),embalagem:round(Number(d.embalagem)||0),peso:d.peso===''?null:Number(d.peso)});return p.id},excluir:id=>{db.products=db.products.filter(p=>p.id!==id)}},
-  secoes:[['Produto',[['id','SKU',{req:1,fixo:1}],['nome','Descrição',{span:3}],['categoria','Categoria'],['peso','Peso (kg)',{t:'number'}]]],['Custos',[['custo','Custo unitário (R$)',{t:'money'}],['embalagem','Embalagem (R$)',{t:'money'}]]]],
-  colunas:[['SKU',d=>`<span class="mono">${esc(d.id)}</span>`],['Descrição',d=>`<strong>${esc(d.nome||'—')}</strong>`],['Categoria',d=>esc(d.categoria||'—')],['Custo',d=>`<span class="num">${money(d.custo||0)}</span>`],['Embalagem',d=>`<span class="num">${money(d.embalagem||0)}</span>`]]}};
+  secoes:[['Produto',[['id','SKU',{req:1,fixo:1}],['nome','Descrição',{span:3}],['categoria','Categoria'],['peso','Peso (kg)',{t:'number'}]]],['Custos',[['custo','Custo à mão (R$) · vale sem nota de entrada ou com "usar à mão"',{t:'money'}],['embalagem','Embalagem (R$)',{t:'money'}]]]],
+  colunas:[['SKU',d=>`<span class="mono">${esc(d.id)}</span>`],['Descrição',d=>`<strong>${esc(d.nome||'—')}</strong>`],['Categoria',d=>esc(d.categoria||'—')],['Custo à mão',d=>`<span class="num">${money(d.custo||0)}</span>`],['Embalagem',d=>`<span class="num">${money(d.embalagem||0)}</span>`],['Custo do produto',d=>{const c=window.Preco?.custo?.(d.id);return c?.tem?`<span class="num"><strong>${money(c.total)}</strong><br><span class="caption">${esc(c.origem.texto||'')}</span></span>`:'<span class="caption">sem custo</span>'}]]}};
 const novoDe=def=>(def.genero==='f'?'Nova ':'Novo ')+def.um;
 const cadState={};const cadUI=pg=>cadState[pg]||(cadState[pg]={modo:'lista',id:null,busca:'',inativos:false});
 const nomeNorm=s=>normalized(s).replace(/\b(ltda|me|epp|eireli|s\/?a|sa)\b/g,'').replace(/[^a-z0-9]/g,'');

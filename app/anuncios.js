@@ -1,7 +1,7 @@
 // © 2026 GK Soluções Empresariais LTDA (CNPJ 60.180.675/0001-91) · Todos os direitos reservados. Veja LICENSE e AUTORIA.md.
 'use strict';
 // Vendas › Anúncios pagos: gasto com Mercado Ads, Shopee Ads e outros por produto no mês do cabeçalho, descontado do
-// lucro de contribuição de cada produto no canal (Margem.lucroSkuCanal, mesma regra do Radar de margem). O gasto entra
+// lucro de contribuição de cada produto no canal (Margem.lucroSkuCanal, a conta de Preços e margem › Margem real). O gasto entra
 // pela API do Mercado Ads (servidor, quando o aplicativo tiver a permissão de publicidade) ou pela importação do
 // relatório do painel de anúncios de cada canal (tabela anuncios_gasto; a mesma linha importada de novo substitui).
 (()=>{
@@ -39,7 +39,7 @@ function view(){if(!window.Cloud?.ws)return '<div class="empty">Entre no portal 
   <span class="caption">Mês do cabeçalho: ${esc(mesNome(month))}</span></div>
  ${!api?`<div class="notice"><strong>Como o gasto entra:</strong> importe o relatório de anúncios do mês (no painel do Mercado Ads ou da Shopee Ads, exporte por anúncio). A leitura automática do Mercado Ads já está pronta e começa sozinha quando o aplicativo do Jarvis no Mercado Livre tiver a permissão de <em>Publicidade</em> no Mercado Livre.</div>`:''}
  <div class="grid kpis4"><div class="card kpi"><span class="kpil">Gasto com anúncios</span><span class="kpiv">${money(gasto)}</span><span class="kpis">${venda?pct(gasto/venda)+' das vendas'+(st.canal?' do canal':''):'sem vendas no mês'}</span></div>
-  <div class="card kpi"><span class="kpil">Lucro dos produtos anunciados</span><span class="kpiv">${money(antes)}</span><span class="kpis">antes dos anúncios (Radar de margem)</span></div>
+  <div class="card kpi"><span class="kpil">Lucro dos produtos anunciados</span><span class="kpiv">${money(antes)}</span><span class="kpis">contribuição antes dos anúncios (Margem real)</span></div>
   <div class="card kpi"><span class="kpil">Depois dos anúncios</span><span class="kpiv ${depois<0?'red':''}">${money(depois)}</span><span class="kpis">${antes?pct(depois/antes)+' do lucro fica':''}</span></div>
   <div class="card kpi"><span class="kpil">Anúncio levando ao prejuízo</span><span class="kpiv ${prejuizo.length?'red':''}">${prejuizo.length}</span><span class="kpis">produto(s) com lucro que o anúncio zerou</span></div></div>
  <div class="tablebox"><div class="tabletop"><div><h2>Gasto e lucro por produto</h2><p class="caption">TACOS = gasto ÷ toda a venda do produto no canal. ACOS = gasto ÷ venda atribuída ao anúncio pelo canal (quando o relatório traz).</p></div></div><div class="tablewrap"><table><thead><tr><th>Produto</th><th>Canal</th><th class="num">Gasto</th><th class="num">Venda no canal</th><th class="num">TACOS</th><th class="num">ACOS</th><th class="num">Lucro antes</th><th class="num">Lucro depois</th></tr></thead><tbody>
@@ -66,5 +66,6 @@ function importar(canal){TableImport.open({title:`Importar gasto com anúncios �
 document.addEventListener('click',e=>{const b=e.target.closest('[data-an-importar]');if(b){e.preventDefault();importar(b.dataset.anImportar)}});
 document.addEventListener('change',e=>{const s=e.target.closest('[data-an="canal"]');if(s){st.canal=s.value;render()}});
 addPage('anuncios','megafone','Anúncios pagos',view,'Gasto com Mercado Ads e Shopee Ads por produto e o lucro que sobra depois dos anúncios.','',()=>{});
-window.Anuncios={carregar};
+// Gasto em anúncios ÷ vendas do mês carregado (fração): o "real" dos anúncios em Preços e margem › Regras de venda.
+window.Anuncios={carregar,percentual:()=>{if(!st.lista?.length||st.mes!==month)return null;const gasto=st.lista.reduce((s,r)=>s+(Number(r.custo)||0),0),venda=[...(window.Margem?.lucroSkuCanal?.(month)||new Map()).values()].reduce((s,v)=>s+v.venda,0);return venda>0?gasto/venda:null}};
 })();

@@ -8,7 +8,7 @@
 //  2. Vendas por dia nas últimas 8 semanas: área com o período anterior tracejado, a faixa da meta diária e os marcos
 //     (promoções, campanhas).
 //  3. Cascata da margem dos últimos 30 dias: venda → tarifas → tributos → custo → lucro.
-//  4. Canais em bolhas: faturamento × margem, tamanho = pedidos (clique abre o Radar de margem).
+//  4. Canais em bolhas: faturamento × margem, tamanho = pedidos (clique abre a Margem real).
 //  5. Mapa do Brasil por estado: faturamento, ticket, frete e vendas interestaduais a consumidor final (DIFAL).
 //  6. Caixa: realizado dos últimos 14 dias e projeção de 30 dias, com o dia de menor saldo em destaque.
 //  7. Metas do mês em anéis (vendas, margem, recebido).
@@ -158,7 +158,7 @@ function blocoCascata(P){const c=P.cascata;if(!c)return `<section class="card rz
  const barras=passos.map(([n,v,k],i)=>{let a,b;if(k==='tot'){a=0;b=v;acum=v}else if(k==='neg'){a=acum+v;b=acum;acum+=v}else{a=Math.min(0,v);b=Math.max(0,v)}const x=X0+i*bw+10,h=Math.max(2,y(a)-y(b));
   return `<rect class="cb ${k}" x="${W(x,1)}" y="${W(y(b),1)}" width="${W(bw-20,1)}" height="${W(h,1)}" rx="4" data-tip="${esc(`<b>${n}</b><br>${money(Math.abs(v))} · ${p1(Math.abs(v)/c.venda)} da venda`)}"/>${i<passos.length-1?`<line class="cl" x1="${W(x+bw-20,1)}" x2="${W(x+bw,1)}" y1="${W(y(acum),1)}" y2="${W(y(acum),1)}"/>`:''}
    <text class="cv" x="${W(x+(bw-20)/2,1)}" y="${W(y(b)-7,1)}" text-anchor="middle">${k==='tot'?curto(v):(v<0?'−':'')+p1(Math.abs(v)/c.venda)}</text><text class="cn" x="${W(x+(bw-20)/2,1)}" y="${Y1+18}" text-anchor="middle">${n}</text>`}).join('');
- return `<section class="card rzcard"><div class="rzhead"><div><h3>Para onde vai o dinheiro de cada venda</h3><p class="caption">Últimos 30 dias · ${c.n} pedidos com custo e tarifa conferidos · de cada R$ 100 vendidos, sobram <b class="${c.lucro>=0?'green':'red'}">${money(c.lucro/c.venda*100)}</b></p></div><button class="quiet small" data-nav="margem">Radar de margem</button></div>
+ return `<section class="card rzcard"><div class="rzhead"><div><h3>Para onde vai o dinheiro de cada venda</h3><p class="caption">Últimos 30 dias · ${c.n} pedidos com custo e tarifa conferidos · de cada R$ 100 vendidos, sobram <b class="${c.lucro>=0?'green':'red'}">${money(c.lucro/c.venda*100)}</b></p></div><button class="quiet small" data-nav="margem">Margem real</button></div>
   <svg class="rzcasc" viewBox="0 0 540 228" role="img" aria-label="Cascata da margem">${barras}</svg></section>`}
 
 function blocoCanais(P){const l=P.canais.filter(c=>c.v>0);if(!l.length)return '';const comM=l.filter(c=>c.m!=null),mlo=comM.length?Math.min(...comM.map(c=>c.m)):0,mhi=comM.length?Math.max(...comM.map(c=>c.m)):.1,mmin=Math.floor((mlo-.06)*20)/20,mmax=Math.ceil((mhi+.06)*20)/20,vmax=Math.max(...l.map(c=>c.v)),nmax=Math.max(...l.map(c=>c.n));
@@ -166,7 +166,7 @@ function blocoCanais(P){const l=P.canais.filter(c=>c.v>0);if(!l.length)return ''
  const bol=l.map(c=>{const r=10+26*Math.sqrt(c.n/nmax),cy=c.m==null?Y1-8:y(c.m);return `<g class="bol" data-nav="margem" role="button" tabindex="0" aria-label="${esc(c.c)}" data-tip="${esc(`<b>${c.c}</b><br>${money(c.v)} · ${c.n} pedidos<br>margem ${p1(c.m)} · tarifa ${p1(c.tarifa/c.v)}`)}"><circle cx="${W(x(c.v),1)}" cy="${W(cy,1)}" r="${W(r,1)}" style="--c:${cor(c.c)}"/><text x="${W(x(c.v),1)}" y="${W(cy-r-6,1)}" text-anchor="middle">${esc(c.c)}</text></g>`}).join('');
  const zero=mmin<0&&mmax>0?`<line class="z" x1="${X0}" x2="${X1}" y1="${W(y(0),1)}" y2="${W(y(0),1)}"/>`:'';
  const tic=[mmin,(mmin+mmax)/2,mmax].map(m=>`<text class="ax" x="${X0-6}" y="${W(y(m)+4,1)}" text-anchor="end">${Math.round(m*100)}%</text>`).join('');
- return `<section class="card rzcard"><div class="rzhead"><div><h3>Canais: faturamento × margem</h3><p class="caption">30 dias · tamanho da bolha = pedidos · clique para abrir o Radar de margem</p></div></div>
+ return `<section class="card rzcard"><div class="rzhead"><div><h3>Canais: faturamento × margem</h3><p class="caption">30 dias · tamanho da bolha = pedidos · clique para abrir a Margem real</p></div></div>
   <svg class="rzbol" viewBox="0 0 540 228" role="img" aria-label="Canais por faturamento e margem"><line class="g" x1="${X0}" x2="${X1}" y1="${Y1}" y2="${Y1}"/>${zero}${tic}<text class="ax" x="${X1}" y="${Y1+20}" text-anchor="end">faturamento →</text><text class="ax" x="${X0}" y="${Y0-8}">margem ↑</text>${bol}</svg>
   <div class="rzleg rzleg-b">${l.map(c=>`<span><i style="background:${cor(c.c)}"></i>${esc(c.c)} · ${p1(c.v/l.reduce((s,x)=>s+x.v,0))}</span>`).join('')}</div></section>`}
 
