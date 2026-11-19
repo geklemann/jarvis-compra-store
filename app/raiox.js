@@ -1,8 +1,8 @@
 // © 2026 GK Soluções Empresariais LTDA (CNPJ 60.180.675/0001-91) · Todos os direitos reservados. Veja LICENSE e AUTORIA.md.
 'use strict';
-// Vendas › Raio-X da margem: por que a margem de contribuição mudou de um mês para outro. A variação é dividida
+// Preços e margem › Margem real › O que mudou (antigo Raio-X da margem): por que a margem de contribuição mudou de um mês para outro. A variação é dividida
 // exatamente entre tarifa, frete, custo e tributos; depois por canal e por produto (efeito mix × efeito margem), com
-// o que mudou em cada produto e o que fazer. Cálculo em Margem.raiox (web/margem.js), mesma regra do Radar de margem.
+// o que mudou em cada produto e o que fazer. Cálculo em Margem.raiox (web/margem.js), com o custo e os tributos de Preços e margem.
 (()=>{
 Object.assign(paths,{raiox:'M4 19h16 M6 16V9 M10 16V5 M14 16v-4 M18 16V8'});
 const st={base:''};
@@ -52,5 +52,6 @@ function view(){if(!window.Margem?.raiox)return '<div class="empty">Carregando�
  <section class="tablebox"><div class="tabletop"><h2>Últimos meses</h2><span class="caption">peso de cada fator nas vendas</span></div><div class="tablewrap"><table><thead><tr><th>Mês</th><th class="num">Vendas (com custo)</th><th class="num">Tarifa</th><th class="num">Frete</th><th class="num">Custo</th><th class="num">Tributos</th><th class="num">Margem</th></tr></thead><tbody>
   ${tend.map(t=>`<tr><td>${esc(nomeMes(t.mes))}</td><td class="num">${money(t.venda)}</td><td class="num">${pct(t.tarifa)}</td><td class="num">${pct(t.frete)}</td><td class="num">${pct(t.custo)}</td><td class="num">${pct(t.tributos)}</td><td class="num"><strong>${pct(t.margem)}</strong></td></tr>`).join('')}</tbody></table></div></section>`}
 document.addEventListener('change',e=>{const s=e.target.closest('[data-rx="base"]');if(s){st.base=s.value;render()}});
-addPage('raiox','raiox','Raio-X da margem',view,'Por que a margem mudou de um mês para o outro: tarifa, frete, custo, tributos, canais e produtos — e o que fazer.','',()=>{});
+// Mostrado dentro de Preços e margem › Margem real, aba "O que mudou" (a rota antiga #raiox leva para lá).
+window.RaioX={view};
 })();

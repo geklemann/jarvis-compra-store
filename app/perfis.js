@@ -25,8 +25,14 @@ function moduloDe(id){return menu().MODS.find(m=>m.grupos.some(([,l])=>l.include
 // Telas liberadas só para consulta (aviso no topo; o banco bloqueia a gravação nas áreas sem edição).
 const leitura=()=>!lista()?null:(Array.isArray(window.Cloud?.leitura)?window.Cloud.leitura:[]);
 function somenteLeitura(id){const l=leitura();return !!l&&l.includes(id)}
-function paginaVisivel(id){if(SEMPRE.includes(id))return true;const l=lista();if(l){if(l.includes(id)||(id==='precos'&&l.includes('formacao')))return true;const conh=window.Cloud?.telasConhecidas;if(Array.isArray(conh)&&!conh.includes(id)){const mid=moduloDe(id);return !!mid&&mid!=='ger'&&l.some(x=>moduloDe(x)===mid)}return false}return true} // tela criada depois da liberação aparece para quem já tem o módulo // Regras e simulador abre pela Formação de preço
-function moduloVisivel(mid){const l=lista();if(l){const m=menu().MODS.find(x=>x.id===mid);return !!m&&m.grupos.some(([,ids])=>ids.some(i=>l.includes(i)))}const p=MODULOS[papel()];return !p||p.includes(mid)}
+// Telas de Preços e margem (18/11/2026) para quem já via as telas que elas substituem.
+const NOVAS_PRECOS={regrasvenda:['precos','formacao'],custoproduto:['cadprodutos','formacao','precos'],cadprodutos:['custoproduto','formacao']};
+// Margem real, Anúncios pagos e Vigia de preços saíram de Vendas para Preços e margem: os perfis de antes que viam Vendas
+// (sem Preços) continuam vendo essas três telas, e só elas, no módulo novo.
+const VINDAS_DE_VENDAS=['margem','anuncios','concorrencia'];
+const legadoVe=(p,id)=>VINDAS_DE_VENDAS.includes(id)&&p.includes('ven');
+function paginaVisivel(id){if(SEMPRE.includes(id))return true;const l=lista();if(l){if(l.includes(id)||(id==='precos'&&l.includes('formacao')))return true;if(NOVAS_PRECOS[id])return NOVAS_PRECOS[id].some(x=>l.includes(x));const conh=window.Cloud?.telasConhecidas;if(Array.isArray(conh)&&!conh.includes(id)){const mid=moduloDe(id);return !!mid&&mid!=='ger'&&l.some(x=>moduloDe(x)===mid)}return false}const p=MODULOS[papel()];if(p&&moduloDe(id)==='pre'&&!p.includes('pre'))return legadoVe(p,id);return true} // tela criada depois da liberação aparece para quem já tem o módulo // Regras e simulador abre pela Formação de preço
+function moduloVisivel(mid){const l=lista();if(l){const m=menu().MODS.find(x=>x.id===mid);return !!m&&m.grupos.some(([,ids])=>ids.some(i=>l.includes(i)))}const p=MODULOS[papel()];return !p||p.includes(mid)||(mid==='pre'&&p.includes('ven'))}
 function inicio(){const l=lista();if(l){const pref=INICIO[papel()]||'resumo';return l.includes(pref)?pref:(l.find(i=>moduloDe(i))||'suporte')}return INICIO[papel()]||'resumo'}
 // O que cada pessoa pode fazer nas telas (botões de lançar, emitir…): a mesma regra do banco (membro_pode) e do servidor
 // (supabase/functions/_shared/acesso_areas.ts). papeis = quem podia pelos perfis de antes; areas = as alternativas pelas
@@ -43,13 +49,13 @@ function permite(papeis,areas,r=window.Cloud?.role||'owner',a=window.Cloud?.aces
  return papeis.includes(r)}
 window.Acesso={permite,membroPode,papelPode,administra:()=>(window.Cloud?.role||'owner')==='owner'};
 // Telas que o perfil vê por padrão (sem lista personalizada).
-function padrao(role){const p=MODULOS[role];return menu().MODS.filter(m=>!p||p.includes(m.id)).flatMap(m=>m.grupos.flatMap(([,l])=>l)).concat(role==='owner'?menu().GERAL:menu().GERAL.filter(g=>!['equipe','auditoria','integracoes'].includes(g)))}
+function padrao(role){const p=MODULOS[role];return menu().MODS.filter(m=>!p||p.includes(m.id)||(m.id==='pre'&&p.includes('ven'))).flatMap(m=>m.grupos.flatMap(([,l])=>l).filter(i=>!p||p.includes(m.id)||legadoVe(p,i))).concat(role==='owner'?menu().GERAL:menu().GERAL.filter(g=>!['equipe','auditoria','integracoes'].includes(g)))}
 window.Perfis={moduloVisivel,paginaVisivel,somenteLeitura,inicio,padrao,nome:()=>papel()==='owner'?'Administra':'Telas escolhidas'};
 
 // ─────────── Janela de permissões (Equipe e acessos › Telas) ───────────
 // Cada tela marcada é "Editar" ou "Só ver". Os dados liberados no banco saem das telas: a área principal de cada tela
 // (ler ou gravar, conforme o nível) mais as áreas que o módulo só consulta. Cadastros (config) sempre para leitura.
-const AREA_TELA={reconcile:'financeiro',pending:'financeiro',closing:'contabil',anuncios:'financeiro',metas:'financeiro',difal:'financeiro',nfrecebidas:'financeiro',catalogo:'estoque',cadprodutos:'estoque',margem:'precos',raiox:'precos',concorrencia:'precos',pedcompra:'estoque',compras:'financeiro',imppag:'financeiro'};
+const AREA_TELA={custoproduto:'precos',regrasvenda:'precos',reconcile:'financeiro',pending:'financeiro',closing:'contabil',anuncios:'financeiro',metas:'financeiro',difal:'financeiro',nfrecebidas:'financeiro',catalogo:'estoque',cadprodutos:'estoque',margem:'precos',raiox:'precos',concorrencia:'precos',pedcompra:'estoque',compras:'financeiro',imppag:'financeiro'};
 const LE_MODULO={atd:['estoque','precos'],ven:['vendas','financeiro','precos','estoque'],est:['vendas','precos'],imp:['estoque'],fin:['vendas','contabil','estoque'],orc:['vendas','contabil'],fis:['vendas','estoque','financeiro'],crm:['estoque'],cad:['estoque'],res:['vendas','financeiro','precos','estoque'],pre:['vendas','estoque'],rel:['vendas','contabil','estoque','precos']};
 const NOME_AREA={vendas:'Vendas e atendimento',estoque:'Estoque e produtos',financeiro:'Financeiro e repasses',contabil:'Contabilidade e fiscal',precos:'Preços',config:'Cadastros'};
 function areasDe(sel,leit){const a={config:'ler'},sobe=(k,v)=>{if(!k)return;if(v==='gravar'||!a[k])a[k]=v};

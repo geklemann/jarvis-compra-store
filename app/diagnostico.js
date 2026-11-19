@@ -13,7 +13,7 @@ const R=v=>money(Math.round(v));
 function atrasados(){const ini=new Date(Date.now()-ui.per*864e5).toLocaleDateString('sv-SE'),l=(window.Pendencias?.conciliacao?.().atras||[]).filter(i=>i.d>=ini);
  return {n:l.length,valor:l.reduce((s,i)=>s+i.v,0)}}
 const o_transito=o=>!!o.transit;
-function view(){const d=window.Margem?.diagnostico?.(ui.per);if(!d)return '<div class="card empty">O Radar de margem ainda não carregou.</div>';
+function view(){const d=window.Margem?.diagnostico?.(ui.per);if(!d)return '<div class="card empty">A Margem real ainda não carregou.</div>';
  if(!d.pedidos)return `<div class="card empty">Sem pedidos com custo cadastrado nos últimos ${ui.per} dias. Conecte os marketplaces e importe os custos dos produtos para gerar o diagnóstico.</div>`;
  const at=atrasados(),achado=d.fora.valor+d.menores.valor+d.prejuizo.valor+at.valor,mes=v=>v*30/ui.per;
  const hoje=new Date(),ini=new Date(d.ini+'T12:00');

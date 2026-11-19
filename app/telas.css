@@ -994,3 +994,48 @@ body.light .imp-mar{--mar-a:#bfe6f7;--mar-b:#8ccbe8;--terra:#e9e2cf;--rota:#0b6f
 .side .menu button.bloqueado{cursor:not-allowed}
 .navlock{display:inline-flex;align-items:center;margin-left:auto;opacity:.7}
 .navlock svg{width:14px;height:14px}
+/* Preços e margem (web/precificacao.js, formacao.js, margem.js): uma conta só, as mesmas palavras em todas as telas */
+.pmsub{margin:-6px 0 14px;max-width:960px}
+.pmsplit{display:grid;grid-template-columns:minmax(0,1.75fr) minmax(300px,1fr);gap:14px;align-items:start}
+.pmsplit .fptab .fpprod img,.pmsplit .fptab .fpsem{display:none}
+.pmsplit .fpcel{min-width:104px}
+.pmsplit .fpin{width:76px}
+.pmsplit>.tablebox{margin:0;min-width:0}
+.pmbar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:12px 14px}
+.pmbar input[type=search]{min-width:200px;flex:1;max-width:280px}
+.pmbar .segtabs{margin:0}
+.pmtab td{vertical-align:top}
+.pmtab tr.pmon td{background:color-mix(in srgb,var(--accent,#2563eb) 9%,transparent)}
+.pmconta{position:sticky;top:12px;min-width:0}
+.pmconta h3{font-size:15px;margin:4px 0 10px}
+.pmtag{font-size:10.5px;font-weight:700;color:var(--accent);letter-spacing:.8px;text-transform:uppercase}
+.pmwf{width:100%}
+.pmwf td,.pmwf th{padding:6px 8px!important}
+.pmwf tr.l2 td:first-child{padding-left:18px!important;color:var(--muted)}
+.pmwf tr.t td{font-weight:650;border-top:1px solid var(--line)}
+.pmin{width:76px;padding:5px 7px;text-align:right;font-variant-numeric:tabular-nums}
+.pmrow{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-top:10px}
+.pmrow .segtabs{margin:0}
+.pmprecos{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-top:12px}
+.pmprecos>div{border:1px solid var(--line);border-radius:10px;padding:10px 12px;display:flex;flex-direction:column;gap:3px;min-width:0}
+.pmprecos small{color:var(--muted);font-size:11px}
+.pmprecos b{font-size:18px;font-variant-numeric:tabular-nums}
+.pmprecos .pmalvo{border-color:var(--accent)}
+.pmprecos button{align-self:flex-start;margin-top:4px}
+.fpcel{cursor:pointer}
+.fpcel.pmcelon{background:color-mix(in srgb,var(--accent,#2563eb) 10%,transparent);box-shadow:inset 0 0 0 2px var(--accent)}
+.mgbarra{flex-wrap:wrap;gap:8px}
+.pmlargo{position:static;margin-bottom:14px}
+.pmcontagrid{display:grid;grid-template-columns:minmax(0,1.1fr) minmax(0,1fr);gap:18px;align-items:start}
+.pmcontagrid .pmprecos{margin-top:0}
+@media (max-width:900px){.pmcontagrid{grid-template-columns:1fr}}
+@media (max-width:1180px){.pmsplit{grid-template-columns:1fr}.pmconta{position:static}}
+@media (max-width:560px){.pmprecos{grid-template-columns:1fr}.pmbar input[type=search]{max-width:none}}
+.pmrow label{display:inline-flex;gap:6px;align-items:center;white-space:nowrap}
+.mgbarra~.tablebox .mgtab th,.mgtab th{white-space:normal;vertical-align:bottom}
+.mgtab th,.mgtab td{padding:8px 8px}
+.mgrola .mgtab th:first-child,.mgrola .mgtab td:first-child{min-width:170px;max-width:240px}
+.pmwf td:first-child{white-space:normal}
+.pmtab td{white-space:normal}
+.pmcontagrid>div{min-width:0}
+@media (max-width:560px){.pmwf td.num,.pmtab td.num{white-space:normal}.pmwf select{max-width:150px}.pmwf td,.pmwf th{padding:6px 4px!important}}

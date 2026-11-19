@@ -40,7 +40,7 @@ function passos(){const con=p=>(st.integ||[]).some(i=>i.provider===p&&i.status==
   ['bling','Conectar o Bling','Pedidos, notas e produtos entram sozinhos (só leitura no diagnóstico).','integracoes',con('bling')],
   ['mkt','Conectar os marketplaces','Mercado Livre, Shopee, Magalu e TikTok Shop: tarifas, repasses e atendimento de cada venda.','integracoes',con('mercadolivre')||con('shopee')||con('magalu')||con('tiktok')],
   ['sync','Primeira sincronização','Os últimos meses de pedidos chegam em alguns minutos depois das conexões.','dashboard',(db.orders||[]).length>0],
-  ['custo','Custos dos produtos','Sem o custo, a margem fica estimada. Use Importar planilha em Custos e embalagens ou ajuste item a item.','cadprodutos',custos],
+  ['custo','Custos dos produtos','Sem o custo, a margem fica estimada. Use Importar planilha em Preços e margem › Custo do produto ou ajuste item a item.','custoproduto',custos],
   ['diag','Ver o diagnóstico gratuito','Margem por canal, tarifa cobrada a mais e repasse que não chegou, numa página.','diagnostico',marcado('diag')],
   ['equipe','Convidar a equipe','Cada pessoa com o seu login e só as telas do seu trabalho.','equipe',(st.membros||1)>1],
   ['plano','Escolher o plano','Continue depois do teste: o preço sai na hora pela quantidade de pedidos.','plano',st.a?.status==='ativa'||st.a?.status==='interno'],
