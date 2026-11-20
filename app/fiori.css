@@ -489,3 +489,16 @@ body.fiori .erp .content{padding-bottom:88px}
  body.fiori table.cartoes td{padding:4px 0!important}
  body.fiori .tablebox:has(table.cartoes),body.fiori .tablewrap:has(> table.cartoes){overflow:visible;border:0;background:transparent}
 }
+
+/* ─── A cor do produto (Jarvis E-Commerce, o laranja do cartão no site: --p-ecommerce #f8a13f) ───
+   Pedido do dono em 19/11/2026: dentro do app, "pequenos resquícios" da cor que ele tem no site. Só detalhes: o anel do
+   quadrado da marca, o ponto do item atual do menu e a barra do módulo aberto, um fio de 2 px no alto do cabeçalho e o
+   anel de foco. O azul de destaque, os botões e as cores de estado continuam os do tema. No claro, o fio e o anel de foco
+   usam o laranja mais fundo #c2620a (4,2:1 no branco, acima dos 3:1 de um contorno); no escuro, o próprio #f8a13f. */
+body.fiori{--ec-cor:#f8a13f;--ec-foco:#c2620a}
+body.fiori:not(.light){--ec-foco:#f8a13f}
+body.fiori .brand .mark{border-color:color-mix(in srgb,var(--ec-cor) 55%,var(--line));box-shadow:0 0 0 3px color-mix(in srgb,var(--ec-cor) 14%,transparent)}
+body.fiori .erp .mitems button.active:before{background:var(--ec-cor)}
+body.fiori .erp .menu .mhead.active{box-shadow:inset 3px 0 var(--ec-cor)}
+body.fiori header{box-shadow:inset 0 2px 0 var(--ec-cor)}
+body.fiori :is(button,a,[tabindex]):focus-visible{outline-color:var(--ec-foco)}
