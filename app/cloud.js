@@ -4,7 +4,35 @@
 // Sem config.js preenchido, o Jarvis continua no modo local (dados neste navegador).
 (()=>{
 const cfg=window.CONCILIA_CONFIG||{};
-const Cloud=window.Cloud={workspaces:[],enabled:!!(cfg.supabaseUrl&&cfg.supabaseAnonKey&&window.supabase),client:null,session:null,ws:null,wsName:'',role:'',state:'idle',error:'',localBackup:null};
+const Cloud=window.Cloud={workspaces:[],enabled:!!(cfg.supabaseUrl&&cfg.supabaseAnonKey&&window.supabase),client:null,session:null,ws:null,wsName:'',role:'',state:'idle',error:'',localBackup:null,settingsVersao:null};
+
+// ── Configurações da empresa por MESCLA (27/11/2026; migração 20261220090000_workspace_settings_mesclar.sql) ──
+// O app mandava {theme, pricing, gerencial} inteiro e o último a gravar apagava o que outro navegador tinha gravado
+// (ex.: as inscrições do substituto tributário em gerencial.fiscal.difal_uf). Agora manda só a diferença em relação ao
+// que leu do banco: as chaves mudadas (em profundidade, objeto a objeto) e os caminhos apagados (listas de chaves,
+// porque há chaves com ponto). Listas e valores simples vão inteiros. O banco mescla com o que tem (mesma regra de
+// aplicarMescla) e avisa se outro lugar tinha mudado: aí o app fica com o do banco + o que é dele.
+const ehObj=v=>v!==null&&typeof v==='object'&&!Array.isArray(v);
+const copia=v=>v===undefined?undefined:JSON.parse(JSON.stringify(v));
+/** JSON com as chaves em ordem (o jsonb do banco reordena; a comparação não pode depender disso). */
+function canonico(v){return JSON.stringify(v===undefined?null:v,(k,x)=>ehObj(x)?Object.keys(x).sort().reduce((o,c)=>(o[c]=x[c],o),{}):x)}
+function porCaminho(obj,cam,v){let o=obj;for(const k of cam.slice(0,-1)){if(!ehObj(o[k]))o[k]={};o=o[k]}o[cam.at(-1)]=v}
+/** O que mudou de a (o que o banco tinha) para b (o que está na tela): {patch, remover}. */
+function diferencaMescla(a,b,cam=[],out={patch:{},remover:[]}){
+ a=ehObj(a)?a:{};b=ehObj(b)?b:{};
+ for(const k of Object.keys(b)){if(b[k]===undefined)continue;const va=a[k],vb=b[k],c=[...cam,k];
+  if(va===undefined)porCaminho(out.patch,c,copia(vb));
+  else if(ehObj(va)&&ehObj(vb))diferencaMescla(va,vb,c,out);
+  else if(canonico(va)!==canonico(vb))porCaminho(out.patch,c,copia(vb))}
+ for(const k of Object.keys(a))if(a[k]!==undefined&&b[k]===undefined)out.remover.push([...cam,k]);
+ return out}
+const semMudanca=d=>!Object.keys(d.patch).length&&!d.remover.length;
+function mesclarProfundo(a,b){if(!ehObj(a)||!ehObj(b))return copia(b);const r={...a};for(const k of Object.keys(b))r[k]=mesclarProfundo(a[k],b[k]);return r}
+/** O mesmo que o banco faz (jsonb_mesclar_profundo e depois #- de cada caminho). */
+function aplicarMescla(base,d){const r=mesclarProfundo(ehObj(base)?copia(base):{},d.patch||{});
+ for(const cam of d.remover||[]){let o=r;for(const k of cam.slice(0,-1)){o=ehObj(o)?o[k]:undefined;if(o===undefined)break}if(ehObj(o))delete o[cam.at(-1)]}
+ return r}
+Cloud.mescla={diferenca:diferencaMescla,aplicar:aplicarMescla,canonico};
 document.body.classList.remove('booting');
 if(!Cloud.enabled){Cloud.state='local';return}
 
@@ -62,8 +90,9 @@ let flushTimer=null,flushing=null,dirty=false;
 
 function ensureIds(){for(const i of db.imports)i.id=i.id||uid();for(const a of db.audit)a.id=a.id||uid()}
 function snapshot(){ensureIds();snap={};for(const [k,m] of Object.entries(maps))snap[k]=new Map(listOf[k]().map(x=>[x[m.key],JSON.stringify(m.toRow(x))]));
- snap.crm=new Map(Object.entries(db.crm||{}).map(([id,c])=>[id,JSON.stringify(c)]));snap.accMap=new Map(Object.entries(db.accMap||{}).map(([id,c])=>[id,JSON.stringify(c)]));snap.closures=new Map(Object.entries(db.closures||{}).map(([m,c])=>[m,JSON.stringify(c)]));snap.settings=JSON.stringify(settingsOf())}
-function settingsOf(){return {theme:db.theme,pricing:db.pricing||null,gerencial:db.gerencial||null}}
+ snap.crm=new Map(Object.entries(db.crm||{}).map(([id,c])=>[id,JSON.stringify(c)]));snap.accMap=new Map(Object.entries(db.accMap||{}).map(([id,c])=>[id,JSON.stringify(c)]));snap.closures=new Map(Object.entries(db.closures||{}).map(([m,c])=>[m,JSON.stringify(c)]));snap.settings=settingsOf()}
+// Sempre uma cópia limpa (JSON): o snapshot não pode ser o mesmo objeto que a tela altera.
+function settingsOf(){return copia({theme:db.theme,pricing:db.pricing||null,gerencial:db.gerencial||null})}
 
 // Carga paginada: conta as linhas e baixa as páginas de 1.000 em paralelo (4 por vez), em ordem estável pelo id.
 // opt.max limita às linhas mais recentes (opt.desc = coluna de data), para tabelas que só precisam do recente.
@@ -92,6 +121,7 @@ async function load(seguro){
   purchases:(await pageAll('purchase_invoices','id,numero,serie,chave,emissao,fornecedor,fornecedor_doc,valor,cfop,natureza,tipo,situacao,itens,parcelas')).map(r=>({id:r.id,numero:r.numero,serie:r.serie,chave:r.chave,emissao:r.emissao,fornecedor:r.fornecedor,fornecedorDoc:r.fornecedor_doc,valor:n(r.valor),cfop:r.cfop,natureza:r.natureza,tipo:r.tipo,situacao:r.situacao,itens:r.itens||[],parcelas:r.parcelas||[]})),pricing:settings[0]?.data?.pricing||undefined,gerencial:settings[0]?.data?.gerencial||undefined};
  /* Em segundo plano: se a pessoa mexeu em algo enquanto carregava, não sobrescreve (salva e busca de novo). */
  if(seguro&&Cloud.state!=='loading')return false;
+ Cloud.settingsVersao=settings[0]?(settings[0].versao??null):0;
  aplicarDados(next);salvarCache(Cloud.ws,next);return true
 }
 function aplicarDados(next){db=next;paymentIndex=null;snapshot();Cloud.state='saved';
@@ -108,7 +138,7 @@ async function limparCache(){try{const d=await idb();d.transaction('dados','read
 // Atualização em segundo plano depois de abrir com o cache: salva o que estiver pendente, busca tudo e redesenha
 // (se a pessoa estiver digitando, espera ela sair do campo).
 async function atualizarSegundoPlano(){Cloud.atualizando=true;paintStatus();try{for(let i=0;i<3;i++){await flush();if(await load(true))break}if(Cloud.state==='loading')Cloud.state='saved'}catch(x){console.warn('atualização em segundo plano',x);Cloud.state='saved'}Cloud.atualizando=false;Cloud.daCache=false;
- const redesenhar=()=>{if(document.querySelector('.modalback'))return setTimeout(redesenhar,2000);render()};const a=document.activeElement;if(a&&/^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName)&&a.closest('#view'))a.addEventListener('blur',()=>setTimeout(redesenhar,50),{once:true});else redesenhar()}
+ redesenharQuandoPuder()}
 Cloud.reload=async()=>{await flush();await load();render()};
 Cloud.switchWs=async id=>{const w=Cloud.workspaces.find(x=>x.id===id);if(!w||id===Cloud.ws)return;await flush();Cloud.ws=w.id;Cloud.wsName=w.name;Cloud.role=w.role;Cloud.paginas=w.paginas||null;Cloud.leitura=w.leitura||null;Cloud.acessos=w.acessos||null;Cloud.telasConhecidas=w.telasConhecidas||null;try{localStorage.setItem('concilia-ws',id)}catch{}await load();window.Integrations&&(Integrations.state.loaded=false);render();toast('Workspace: '+w.name)};
 Cloud.renameWs=async name=>{const {error}=await sb.from('workspaces').update({name}).eq('id',Cloud.ws);if(error)throw error;Cloud.wsName=name;const w=Cloud.workspaces.find(x=>x.id===Cloud.ws);if(w)w.name=name};
@@ -140,14 +170,64 @@ async function flush(){
    const clGone=[...snap.closures.keys()].filter(m=>!clNow.has(m));
    if(clGone.length){const {error}=await sb.from('closures').delete().eq('workspace_id',ws).in('month',clGone);if(error)throw error}
    snap.closures=clNow;
-   const st=JSON.stringify(settingsOf());
-   if(st!==snap.settings){const {error}=await sb.from('workspace_settings').upsert({workspace_id:ws,data:settingsOf()});if(error)throw error;snap.settings=st}
+   await gravarSettings(ws);
    Cloud.state='saved';Cloud.error='';
   }catch(e){Cloud.state='error';Cloud.error=e.message||String(e);console.error(e);toast('Não foi possível salvar na nuvem: '+Cloud.error)}
   finally{flushing=null;paintStatus();if(dirty){dirty=false;schedule()}}
  })();
  return flushing;
 }
+// Configurações: manda só a diferença para o banco mesclar (workspace_settings_mesclar). Banco sem a função (instância
+// com o banco ainda não atualizado): o upsert antigo, como antes.
+async function gravarSettings(ws){
+ if(snap.settings===undefined)return; // ainda sem o que o banco tem (carregando): nada a comparar
+ const enviado=settingsOf(),d=diferencaMescla(snap.settings,enviado);
+ if(semMudanca(d))return;
+ const {data:r,error}=await sb.rpc('workspace_settings_mesclar',{p_ws:ws,p_patch:d.patch,p_remover:d.remover,p_versao:Cloud.settingsVersao});
+ if(error){
+  if(error.code==='PGRST202'||/workspace_settings_mesclar/.test(error.message||'')&&/could not find|does not exist|não existe/i.test(error.message||'')){
+   const {error:e2}=await sb.from('workspace_settings').upsert({workspace_id:ws,data:enviado});if(e2)throw e2;snap.settings=enviado;return}
+  throw error}
+ if(ws!==Cloud.ws)return;
+ receberSettings(r?.data,r?.versao??null,{enviado,avisar:!!r?.conflito})}
+/** Recebe as configurações do banco sem perder o que é desta tela: o que mudou aqui desde `enviado` (e ainda não foi
+ *  gravado) é reaplicado por cima e vai na próxima gravação. Se a tela muda por causa de outro lugar, avisa. */
+function receberSettings(dados,versao,{enviado=snap.settings,avisar=false}={}){
+ const remoto=copia({theme:dados?.theme,pricing:dados?.pricing||null,gerencial:dados?.gerencial||null}),local=settingsOf();
+ const pend=diferencaMescla(enviado,local),novo=aplicarMescla(remoto,pend);
+ const tema=window.Aparencia?.modoUsuario?.()||novo.theme||db.theme;
+ novo.theme=tema;
+ // Só troca os objetos da tela quando o conteúdo mudou (quem guardou uma referência a db.gerencial continua valendo).
+ const mudou=canonico(novo)!==canonico(local);
+ if(mudou){db.theme=tema;db.pricing=novo.pricing||undefined;db.gerencial=novo.gerencial||undefined}
+ // O tema escolhido pela pessoa (Aparência) é dela, não da empresa: não vira mudança a gravar.
+ snap.settings={...remoto,theme:pend.patch.theme!==undefined?remoto.theme:tema};
+ Cloud.settingsVersao=versao;
+ if(mudou){
+  document.body.classList.toggle('light',db.theme==='light');
+  if(avisar)toast('As configurações foram alteradas em outro lugar; recarregamos.');
+  redesenharQuandoPuder()}
+ if(!semMudanca(diferencaMescla(snap.settings,settingsOf())))dirty=true}
+// Redesenha sem atrapalhar: com uma janela aberta espera ela fechar; com alguém digitando, espera sair do campo.
+function redesenharQuandoPuder(){const redesenhar=()=>{if(document.querySelector('.modalback'))return setTimeout(redesenhar,2000);render()};const a=document.activeElement;if(a&&/^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName)&&a.closest('#view'))a.addEventListener('blur',()=>setTimeout(redesenhar,50),{once:true});else redesenhar()}
+// Ao voltar para a aba (ou focar a janela), relê as configurações: se outro lugar mudou, fica com as do banco + as daqui.
+let releitura=0;
+async function relerSettings(){
+ if(!Cloud.ws||Cloud.state==='loading'||document.visibilityState==='hidden'||Date.now()-releitura<5000)return;
+ releitura=Date.now();
+ try{
+  if(flushing)await flushing;
+  const ws=Cloud.ws,{data,error}=await sb.from('workspace_settings').select('data,versao').eq('workspace_id',ws).maybeSingle();
+  if(error||ws!==Cloud.ws||flushing||Cloud.state==='loading')return;
+  if(data&&data.versao===undefined)return; // banco sem a versão (ainda não atualizado): fica como antes
+  const v=data?data.versao:0;
+  if(Cloud.settingsVersao!=null&&v<=Cloud.settingsVersao)return;
+  receberSettings(data?.data,v,{avisar:true});
+  if(dirty&&!flushing){dirty=false;schedule()}
+ }catch(x){console.warn('releitura das configurações',x)}}
+Cloud.relerSettings=relerSettings;
+window.addEventListener('focus',relerSettings);
+document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')relerSettings()});
 function schedule(){if(!Cloud.ws)return;Cloud.state='pending';paintStatus();clearTimeout(flushTimer);flushTimer=setTimeout(flush,700)}
 Cloud.flush=flush;
 
@@ -262,7 +342,7 @@ async function start(session){
   let pref=null;try{pref=localStorage.getItem('concilia-ws')}catch{}
   const chosen=Cloud.workspaces.find(w=>w.id===pref)||Cloud.workspaces.find(w=>w.role==='member')||Cloud.workspaces.find(w=>w.id===ws)||{id:ws,role:'owner',name:'Minha operação'};
   Cloud.ws=chosen.id;Cloud.wsName=chosen.name;Cloud.role=chosen.role;Cloud.paginas=chosen.paginas||null;Cloud.leitura=chosen.leitura||null;Cloud.acessos=chosen.acessos||null;Cloud.telasConhecidas=chosen.telasConhecidas||null;
-  const doCache=await lerCache(Cloud.ws);if(doCache){aplicarDados(doCache);Cloud.daCache=true}else await load();
+  const doCache=await lerCache(Cloud.ws);if(doCache){Cloud.settingsVersao=null;aplicarDados(doCache);Cloud.daCache=true}else await load();
   // Ao entrar, sempre a tela inicial. Fica na tela do endereço quando a página só recarregou no meio do uso
   // (atualização automática, F5, aba que o navegador descartou para poupar memória, volta da autorização de uma
   // integração) e nos primeiros passos de quem acabou de criar a empresa.
@@ -282,7 +362,7 @@ function offerMigration(){const b=Cloud.localBackup;modal('Levar dados deste nav
 document.addEventListener('click',async e=>{const b=e.target.closest('button[data-cloud]');if(!b)return;
  const a=b.dataset.cloud;
  if(a==='migrate'){const src=Cloud.localBackup;db.orders=src.orders;db.receipts=src.receipts;db.imports=src.imports||[];db.closures=src.closures||{};db.ledger=src.ledger||[];db.crm=src.crm||{};db.audit=[...(src.audit||[]),...db.audit];Cloud.localBackup=null;audit('Dados locais enviados à nuvem',`${src.orders.length} pedidos e ${src.receipts.length} liberações copiados deste navegador.`);closeModal();render();await flush();toast('Dados copiados para a nuvem.')}
- if(a==='logout'){await flush();await sb.auth.signOut({scope:'local'});db=seed();snap={};render()}
+ if(a==='logout'){await flush();await sb.auth.signOut({scope:'local'});db=seed();snap={};Cloud.settingsVersao=null;render()}
  if(a==='reload'){b.disabled=true;await Cloud.reload();toast('Dados atualizados.')}
 });
 
